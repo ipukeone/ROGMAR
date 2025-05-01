@@ -1,0 +1,16 @@
+http:
+  routers:
+    truenas-rtr:                                                                                                                                                # Adjust the router name (e.g. [HOSTNAME]-rtr)
+      rule: 'Host(`truenas.{{env "TRAEFIK_DOMAIN"}}`)'                                                                                                          # Adjust the [HOSTNAME]
+      # entryPoints:                                                                                                                                              # Optional: Use an entryPoint other than the default
+      #   - websecure
+      # middlewares:                                                                                                                                              # Optional: Add specific middlewares to this router
+      #   - middleware@file
+      service: truenas-svc                                                                                                                                      # Adjust the service name (e.g. [HOSTNAME]-svc)
+      # tls:                                                                                                                                                      # Optional: Add specific tls options to this router
+      #   certResolver: cloudflare
+  services:
+    truenas-svc:                                                                                                                                                # Adjust the service name to match the service name above
+      loadBalancer:
+        servers:
+          - url: "https://192.168.10.200/"                                                                                                                      # Adjust the url to your application
