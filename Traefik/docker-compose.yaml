@@ -31,7 +31,7 @@ services:
       - --api=true
       - --api.dashboard=true
       - --api.disabledashboardad=true
-      - --api.insecure=false
+      - --api.insecure=true
       ### Enable log
       - --log.level=${LOG_LEVEL}
       - --log.format=${LOG_FORMAT}
@@ -98,10 +98,12 @@ services:
     ports:
       - 80:80
       - 443:443
+      # - 8080:8080
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.rule=Host(`${TRAEFIK_HOSTNAME}.${TRAEFIK_DOMAIN}`)"
-      - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.service=api@internal"
+      # - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.service=api@internal"
+      - "traefik.http.services.${TRAEFIK_HOSTNAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT}"
     volumes:
       - /etc/localtime:/etc/localtime:ro                                                                                                                        # Localtime
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Timezone
