@@ -1,5 +1,6 @@
 http:
   middlewares:
+
     ### Only allow Local networks
     local-IPAllowList:
       IPAllowList:
@@ -25,7 +26,7 @@ http:
         memResponseBodyBytes: 1073741824                                                                                                                        # You can configure a threshold (in bytes) from which the response will be buffered on disk instead of in memory with the memResponseBodyBytes option
         retryExpression: "IsNetworkError() && Attempts() < 2"                                                                                                   # You can have the Buffering middleware replay the request using retryExpression
 
-    ### SECURITY HEADERS
+    ### Security headers
     security-headers:
       headers:
         customRequestHeaders:                                                                                                                                   # The customRequestHeaders option lists the header names and values to apply to the request
@@ -75,3 +76,22 @@ http:
         permissionsPolicy:                                                                                                                                      # The permissionsPolicy allows sites to control browser features
           "camera=(), microphone=(), geolocation=(), payment=(), usb=(), vr=()"
         isDevelopment: false                                                                                                                                    # Set isDevelopment to true when developing to mitigate the unwanted effects of the AllowedHosts, SSL, and STS options. Usually testing takes place using HTTP, not HTTPS, and on localhost, not your production domain. If you would like your development environment to mimic production with complete Host blocking, SSL redirects, and STS headers, leave this as false
+
+    ### Authentik proxy
+    authentik-proxy:                                                                                                                                            # Forward to authentik to authenticate before accessing the website
+            forwardAuth:
+                address: http://{{env "AUTHENTIK_CONTAINER_NAME"}}:9000/outpost.goauthentik.io/auth/traefik
+                trustForwardHeader: true
+                authResponseHeaders:
+                    - X-authentik-username
+                    - X-authentik-groups
+                    - X-authentik-entitlements
+                    - X-authentik-email
+                    - X-authentik-name
+                    - X-authentik-uid
+                    - X-authentik-jwt
+                    - X-authentik-meta-jwks
+                    - X-authentik-meta-outpost
+                    - X-authentik-meta-provider
+                    - X-authentik-meta-app
+                    - X-authentik-meta-version

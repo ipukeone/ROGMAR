@@ -102,7 +102,7 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.rule=Host(`${TRAEFIK_HOSTNAME}.${TRAEFIK_DOMAIN}`)"
-      # - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.service=api@internal"
+      - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.middlewares=authentik-proxy@file"
       - "traefik.http.services.${TRAEFIK_HOSTNAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT}"
     volumes:
       - /etc/localtime:/etc/localtime:ro                                                                                                                        # Localtime
@@ -116,6 +116,7 @@ services:
       TRAEFIK_DOMAIN: ${TRAEFIK_DOMAIN}                                                                                                                         # Passing the domain name to traefik container to be able to use the variable in rules
       TRAEFIK_DOMAIN_1: ${TRAEFIK_DOMAIN_1}                                                                                                                     # Passing the second domain name to traefik container to be able to use the variable in rules
       TRAEFIK_DOMAIN_2: ${TRAEFIK_DOMAIN_2}                                                                                                                     # Passing the third domain name to traefik container to be able to use the variable in rules
+      AUTHENTIK_CONTAINER_NAME: ${AUTHENTIK_CONTAINER_NAME}                                                                                                     # Passing the authentik container name to traefik container to be able to use the variable in rules
     secrets:
       - ${CF_DNS_API_TOKEN_FILENAME}
     depends_on:
