@@ -3,14 +3,14 @@ http:
 
   ### Individual middlewares
 
-    ### Websocket security headers
+    ## Websocket security headers
     websocket-security-headers:
       headers:
         customRequestHeaders:                                                                                                                                   # The customRequestHeaders option lists the header names and values to apply to the request
           Connection: "upgrade"                                                                                                                                 # Part of the WebSocket handshake - **mandatory** (Collabora, OnlyOffice, ...)
           Upgrade: "websocket"                                                                                                                                  # Enables WebSocket communication - **mandatory** for live editing (Collabora, OnlyOffice, ...)
 
-    ### Authentik proxy
+    ## Authentik proxy
     authentik-proxy:                                                                                                                                            # Forward to authentik to authenticate before accessing the website
             forwardAuth:
                 address: http://{{env "AUTHENTIK_CONTAINER_NAME"}}:9000/outpost.goauthentik.io/auth/traefik
