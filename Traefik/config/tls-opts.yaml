@@ -1,7 +1,18 @@
 ### Only use secure TLS ciphers
 tls:
   options:
-    tls-opts:
+
+    ### Individual tls options
+
+    ## Individual configuration
+    # example-opts:
+      # ...
+
+
+    ### Global tls options
+
+    ## Only allow min TLS version 1.2
+    global-tls-opts:
       minVersion: VersionTLS12
       cipherSuites:
         - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
@@ -17,4 +28,4 @@ tls:
       curvePreferences:
         - CurveP521
         - CurveP384
-    sniStrict: true                                                                                                                                             # With strict SNI checking enabled, Traefik won't allow connections from clients that do not specify a server_name extension or don't match any of the configured certificates. The default certificate is irrelevant on that matter.
+      sniStrict: true                                                                                                                                           # With strict SNI checking enabled, Traefik won't allow connections from clients that do not specify a server_name extension or don't match any of the configured certificates. The default certificate is irrelevant on that matter.

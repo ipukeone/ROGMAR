@@ -65,7 +65,7 @@ services:
       # - --entrypoints.websecure.http.tls.domains[1].main=${TRAEFIK_DOMAIN_2}
       # - --entrypoints.websecure.http.tls.domains[1].sans=*.${TRAEFIK_DOMAIN_2}
       # Enable default TLS options for all routers
-      - --entrypoints.websecure.http.tls.options=tls-opts@file
+      - --entrypoints.websecure.http.tls.options=${TLSOPTIONS}
       # Enable default middlewares for all routers
       - --entrypoints.websecure.http.middlewares=${MIDDLEWARES}
       ### Provider configuration
