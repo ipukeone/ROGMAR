@@ -1,81 +1,14 @@
 http:
   middlewares:
 
-    ### Only allow Local networks
-    local-IPAllowList:
-      IPAllowList:
-        sourceRange:
-          - 127.0.0.1/32                                                                                                                                        # localhost
-          - 10.0.0.0/8                                                                                                                                          # single class A network
-          - 172.16.0.0/12                                                                                                                                       # 16 contiguous class B networks
-          - 192.168.0.0/16                                                                                                                                      # 256 contiguous class C networks
+  ### Individual middlewares
 
-    ### Rate limiting
-    rate-limit:
-      rateLimit:
-        average: 100                                                                                                                                            # average is the maximum rate, by default in requests per second, allowed from a given source
-        period: 1                                                                                                                                               # period, in combination with average, defines the actual maximum rate, such as r = average / period
-        burst: 100                                                                                                                                              # burst is the maximum number of requests allowed to go through in the same arbitrarily small period of time
-
-    ### Buffering
-    buffering-limit:
-      buffering:
-        maxRequestBodyBytes: 0                                                                                                                                  # The maxRequestBodyBytes option configures the maximum allowed body size for the request (in bytes). If the request exceeds the allowed size, it is not forwarded to the service, and the client gets a 413 (Request Entity Too Large) response
-        memRequestBodyBytes: 1073741824                                                                                                                         # You can configure a threshold (in bytes) from which the request will be buffered on disk instead of in memory with the memRequestBodyBytes option
-        maxResponseBodyBytes: 0                                                                                                                                 # The maxResponseBodyBytes option configures the maximum allowed response size from the service (in bytes). If the response exceeds the allowed size, it is not forwarded to the client. The client gets a 500 (Internal Server Error) response instead
-        memResponseBodyBytes: 1073741824                                                                                                                        # You can configure a threshold (in bytes) from which the response will be buffered on disk instead of in memory with the memResponseBodyBytes option
-        retryExpression: "IsNetworkError() && Attempts() < 2"                                                                                                   # You can have the Buffering middleware replay the request using retryExpression
-
-    ### Security headers
-    security-headers:
+    ### Websocket security headers
+    websocket-security-headers:
       headers:
         customRequestHeaders:                                                                                                                                   # The customRequestHeaders option lists the header names and values to apply to the request
-          X-Forwarded-Proto: "https"
-        customResponseHeaders:                                                                                                                                  # The customResponseHeaders option lists the header names and values to apply to the response
-          X-Robots-Tag: "none,noarchive,nosnippet,notranslate,noimageindex,noindex,nofollow"
-          X-Forwarded-Proto: "https"
-          server: ""
-          X-Download-Options: "noopen"
-        # accessControlAllowCredentials:                                                                                                                          # The accessControlAllowCredentials indicates whether the request can include user credentials
-        # accessControlAllowHeaders:                                                                                                                              # The accessControlAllowHeaders indicates which header field names can be used as part of the request
-        # accessControlAllowMethods:                                                                                                                              # The accessControlAllowMethods indicates which methods can be used during requests
-        # accessControlAllowOriginList:                                                                                                                           # The accessControlAllowOriginList indicates whether a resource can be shared by returning different values
-        # accessControlAllowOriginListRegex:                                                                                                                      # The accessControlAllowOriginListRegex option is the counterpart of the accessControlAllowOriginList option with regular expressions instead of origin values. It allows all origins that contain any match of a regular expression in the accessControlAllowOriginList
-        # accessControlExposeHeaders:                                                                                                                             # The accessControlExposeHeaders indicates which headers are safe to expose to the api of a CORS API specification
-        accessControlMaxAge: 100                                                                                                                                # The accessControlMaxAge indicates how many seconds a preflight request can be cached for
-        # addVaryHeader:                                                                                                                                          # The addVaryHeader is used in conjunction with accessControlAllowOriginList to determine whether the Vary header should be added or modified to demonstrate that server responses can differ based on the value of the origin header
-        # allowedHosts:                                                                                                                                           # The allowedHosts option lists fully qualified domain names that are allowed
-        hostsProxyHeaders:                                                                                                                                      # The hostsProxyHeaders option is a set of header keys that may hold a proxied hostname value for the request
-          - "X-Forwarded-Host"
-        # sslRedirect: true                                                                                                                                       # Deprecated (EntryPoint redirection, RedirectScheme middleware) - The sslRedirect only allow HTTPS requests when set to true
-        # sslTemporaryRedirect: true                                                                                                                              # Deprecated (EntryPoint redirection, RedirectScheme middleware) - Set sslTemporaryRedirect to true to force an SSL redirection using a 302 (instead of a 301)
-        # sslHost: "example.com"                                                                                                                                  # Deprecated (RedirectRegex middleware) - The sslHost option is the host name that is used to redirect HTTP requests to HTTPS
-        sslProxyHeaders:                                                                                                                                        # The sslProxyHeaders option is set of header keys with associated values that would indicate a valid HTTPS request. It can be useful when using other proxies (example: "X-Forwarded-Proto": "https")
-          X-Forwarded-Proto: "https"
-        # sslForceHost: true                                                                                                                                      # Deprecated (RedirectRegex middleware) - Set sslForceHost to true and set sslHost to force requests to use SSLHost regardless of whether they already use SSL
-        stsSeconds: 15552000                                                                                                                                    # The stsSeconds is the max-age of the Strict-Transport-Security header. If set to 0, the header is not set
-        stsIncludeSubdomains: true                                                                                                                              # If the stsIncludeSubdomains is set to true, the includeSubDomains directive is appended to the Strict-Transport-Security header
-        stsPreload: true                                                                                                                                        # Set stsPreload to true to have the preload flag appended to the Strict-Transport-Security header
-        forceSTSHeader: true                                                                                                                                    # Set forceSTSHeader to true to add the STS header even when the connection is HTTP
-        # frameDeny: true                                                                                                                                         # Set frameDeny to true to add the X-Frame-Options header with the value of DENY
-        customFrameOptionsValue: "SAMEORIGIN"                                                                                                                   # The customFrameOptionsValue allows the X-Frame-Options header value to be set with a custom value. This overrides the FrameDeny option
-        contentTypeNosniff: true                                                                                                                                # Set contentTypeNosniff to true to add the X-Content-Type-Options header with the value nosniff
-        browserXssFilter: true                                                                                                                                  # Set browserXssFilter to true to add the X-XSS-Protection header with the value 1; mode=block
-        # customBrowserXSSValue:                                                                                                                                  # The customBrowserXssValue option allows the X-XSS-Protection header value to be set with a custom value. This overrides the BrowserXssFilter option
-        # contentSecurityPolicy:                                                                                                                                  # The contentSecurityPolicy option allows the Content-Security-Policy header value to be set with a custom value
-        #   frame-ancestors '*.{{env "TRAEFIK_DOMAIN"}}:* {{env "TRAEFIK_DOMAIN"}}:*';
-        #   object-src 'self' *.{{env "TRAEFIK_DOMAIN"}}:* {{env "TRAEFIK_DOMAIN"}}:*;
-        #   script-src 'self' *.{{env "TRAEFIK_DOMAIN"}}:* {{env "TRAEFIK_DOMAIN"}}:*;
-        #   img-src 'self' *.{{env "TRAEFIK_DOMAIN"}}:* {{env "TRAEFIK_DOMAIN"}}:*;
-        #   default-src 'self' *.{{env "TRAEFIK_DOMAIN"}}:* {{env "TRAEFIK_DOMAIN"}}:*;
-        #   base-uri 'none';
-        # contentSecurityPolicyReportOnly:                                                                                                                        # The contentSecurityPolicyReportOnly option allows the Content-Security-Policy-Report-Only header value to be set with a custom value
-        # publicKey:                                                                                                                                              # The publicKey implements HPKP to prevent MITM attacks with forged certificates
-        referrerPolicy: "same-origin"                                                                                                                           # The referrerPolicy allows sites to control whether browsers forward the Referer header to other sites (https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Referrer-Policy)
-        # featurePolicy:                                                                                                                                          # Deprecated (permissionsPolicy) - The featurePolicy allows sites to control browser features
-        permissionsPolicy:                                                                                                                                      # The permissionsPolicy allows sites to control browser features
-          "camera=(), microphone=(), geolocation=(), payment=(), usb=(), vr=()"
-        isDevelopment: false                                                                                                                                    # Set isDevelopment to true when developing to mitigate the unwanted effects of the AllowedHosts, SSL, and STS options. Usually testing takes place using HTTP, not HTTPS, and on localhost, not your production domain. If you would like your development environment to mimic production with complete Host blocking, SSL redirects, and STS headers, leave this as false
+          Connection: "upgrade"                                                                                                                                 # Part of the WebSocket handshake - **mandatory** (Collabora, OnlyOffice, ...)
+          Upgrade: "websocket"                                                                                                                                  # Enables WebSocket communication - **mandatory** for live editing (Collabora, OnlyOffice, ...)
 
     ### Authentik proxy
     authentik-proxy:                                                                                                                                            # Forward to authentik to authenticate before accessing the website
@@ -95,3 +28,84 @@ http:
                     - X-authentik-meta-provider
                     - X-authentik-meta-app
                     - X-authentik-meta-version
+
+
+  ### Global middlewares
+
+    ## Only allow Local networks
+    global-local-IPAllowList:
+      IPAllowList:
+        sourceRange:
+          - 127.0.0.1/32                                                                                                                                        # localhost
+          - 10.0.0.0/8                                                                                                                                          # single class A network
+          - 172.16.0.0/12                                                                                                                                       # 16 contiguous class B networks
+          - 192.168.0.0/16                                                                                                                                      # 256 contiguous class C networks
+
+    ## Rate limiting
+    global-rate-limit:
+      rateLimit:
+        average: 100                                                                                                                                            # average is the maximum rate, by default in requests per second, allowed from a given source
+        period: 1                                                                                                                                               # period, in combination with average, defines the actual maximum rate, such as r = average / period
+        burst: 100                                                                                                                                              # burst is the maximum number of requests allowed to go through in the same arbitrarily small period of time
+
+    ## Buffering
+    global-buffering-limit:
+      buffering:
+        maxRequestBodyBytes: 0                                                                                                                                  # The maxRequestBodyBytes option configures the maximum allowed body size for the request (in bytes). If the request exceeds the allowed size, it is not forwarded to the service, and the client gets a 413 (Request Entity Too Large) response
+        memRequestBodyBytes: 1073741824                                                                                                                         # You can configure a threshold (in bytes) from which the request will be buffered on disk instead of in memory with the memRequestBodyBytes option
+        maxResponseBodyBytes: 0                                                                                                                                 # The maxResponseBodyBytes option configures the maximum allowed response size from the service (in bytes). If the response exceeds the allowed size, it is not forwarded to the client. The client gets a 500 (Internal Server Error) response instead
+        memResponseBodyBytes: 1073741824                                                                                                                        # You can configure a threshold (in bytes) from which the response will be buffered on disk instead of in memory with the memResponseBodyBytes option
+        retryExpression: "IsNetworkError() && Attempts() < 2"                                                                                                   # You can have the Buffering middleware replay the request using retryExpression
+
+    ## Security headers
+    global-security-headers:
+      headers:
+        customRequestHeaders:                                                                                                                                   # The customRequestHeaders option lists the header names and values to apply to the request
+          X-Forwarded-Proto: "https"                                                                                                                            # Important so that the application knows that HTTPS is being used
+        customResponseHeaders:                                                                                                                                  # The customResponseHeaders option lists the header names and values to apply to the response
+          X-Robots-Tag: "none,noarchive,nosnippet,notranslate,noimageindex,noindex,nofollow"
+          X-Forwarded-Proto: "https"
+          server: ""
+          X-Download-Options: "noopen"
+          Cache-Control: "no-store, no-cache, must-revalidate"
+        # accessControlAllowCredentials:                                                                                                                          # The accessControlAllowCredentials indicates whether the request can include user credentials
+        # accessControlAllowHeaders:                                                                                                                              # The accessControlAllowHeaders indicates which header field names can be used as part of the request
+        # accessControlAllowMethods:                                                                                                                              # The accessControlAllowMethods indicates which methods can be used during requests
+        accessControlAllowOriginList: "*"                                                                                                                       # The accessControlAllowOriginList indicates whether a resource can be shared by returning different values
+        # accessControlAllowOriginListRegex:                                                                                                                      # The accessControlAllowOriginListRegex option is the counterpart of the accessControlAllowOriginList option with regular expressions instead of origin values. It allows all origins that contain any match of a regular expression in the accessControlAllowOriginList
+        # accessControlExposeHeaders:                                                                                                                             # The accessControlExposeHeaders indicates which headers are safe to expose to the api of a CORS API specification
+        accessControlMaxAge: 100                                                                                                                                # The accessControlMaxAge indicates how many seconds a preflight request can be cached for
+        # addVaryHeader:                                                                                                                                          # The addVaryHeader is used in conjunction with accessControlAllowOriginList to determine whether the Vary header should be added or modified to demonstrate that server responses can differ based on the value of the origin header
+        # allowedHosts:                                                                                                                                           # The allowedHosts option lists fully qualified domain names that are allowed
+        hostsProxyHeaders:                                                                                                                                      # The hostsProxyHeaders option is a set of header keys that may hold a proxied hostname value for the request
+          - "X-Forwarded-Host"
+        # sslRedirect: true                                                                                                                                       # Deprecated (EntryPoint redirection, RedirectScheme middleware) - The sslRedirect only allow HTTPS requests when set to true
+        # sslTemporaryRedirect: true                                                                                                                              # Deprecated (EntryPoint redirection, RedirectScheme middleware) - Set sslTemporaryRedirect to true to force an SSL redirection using a 302 (instead of a 301)
+        # sslHost: "example.com"                                                                                                                                  # Deprecated (RedirectRegex middleware) - The sslHost option is the host name that is used to redirect HTTP requests to HTTPS
+        sslProxyHeaders:                                                                                                                                        # The sslProxyHeaders option is set of header keys with associated values that would indicate a valid HTTPS request. It can be useful when using other proxies (example: "X-Forwarded-Proto": "https")
+          X-Forwarded-Proto: "https"
+        # sslForceHost: true                                                                                                                                      # Deprecated (RedirectRegex middleware) - Set sslForceHost to true and set sslHost to force requests to use SSLHost regardless of whether they already use SSL
+        stsSeconds: 15552000                                                                                                                                    # The stsSeconds is the max-age of the Strict-Transport-Security header. If set to 0, the header is not set
+        stsIncludeSubdomains: true                                                                                                                              # If the stsIncludeSubdomains is set to true, the includeSubDomains directive is appended to the Strict-Transport-Security header
+        stsPreload: true                                                                                                                                        # Set stsPreload to true to have the preload flag appended to the Strict-Transport-Security header
+        forceSTSHeader: true                                                                                                                                    # Set forceSTSHeader to true to add the STS header even when the connection is HTTP
+        frameDeny: true                                                                                                                                         # Set frameDeny to true to add the X-Frame-Options header with the value of DENY
+        customFrameOptionsValue: "SAMEORIGIN"                                                                                                                   # The customFrameOptionsValue allows the X-Frame-Options header value to be set with a custom value. This overrides the FrameDeny option
+        contentTypeNosniff: true                                                                                                                                # Set contentTypeNosniff to true to add the X-Content-Type-Options header with the value nosniff
+        browserXssFilter: true                                                                                                                                  # Set browserXssFilter to true to add the X-XSS-Protection header with the value 1; mode=block
+        # customBrowserXSSValue:                                                                                                                                  # The customBrowserXssValue option allows the X-XSS-Protection header value to be set with a custom value. This overrides the BrowserXssFilter option
+        # contentSecurityPolicy:                                                                                                                                  # The contentSecurityPolicy option allows the Content-Security-Policy header value to be set with a custom value
+        #  "default-src 'self'; script-src 'self' https://trusted-cdn.com; object-src 'none';"
+        #   frame-ancestors '*.{{env "TRAEFIK_DOMAIN"}}:* {{env "TRAEFIK_DOMAIN"}}:*';
+        #   object-src 'self' *.{{env "TRAEFIK_DOMAIN"}}:* {{env "TRAEFIK_DOMAIN"}}:*;
+        #   script-src 'self' *.{{env "TRAEFIK_DOMAIN"}}:* {{env "TRAEFIK_DOMAIN"}}:*;
+        #   img-src 'self' *.{{env "TRAEFIK_DOMAIN"}}:* {{env "TRAEFIK_DOMAIN"}}:*;
+        #   default-src 'self' *.{{env "TRAEFIK_DOMAIN"}}:* {{env "TRAEFIK_DOMAIN"}}:*;
+        #   base-uri 'none';
+        # contentSecurityPolicyReportOnly:                                                                                                                        # The contentSecurityPolicyReportOnly option allows the Content-Security-Policy-Report-Only header value to be set with a custom value
+        # publicKey:                                                                                                                                              # The publicKey implements HPKP to prevent MITM attacks with forged certificates
+        referrerPolicy: "no-referrer"                                                                                                                           # The referrerPolicy allows sites to control whether browsers forward the Referer header to other sites (https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Referrer-Policy)
+        # featurePolicy:                                                                                                                                          # Deprecated (permissionsPolicy) - The featurePolicy allows sites to control browser features
+        permissionsPolicy:                                                                                                                                      # The permissionsPolicy allows sites to control browser features
+          "camera=(), microphone=(), geolocation=(), payment=(), usb=(), vr=(), interest-cohort=()"
+        isDevelopment: false                                                                                                                                    # Set isDevelopment to true when developing to mitigate the unwanted effects of the AllowedHosts, SSL, and STS options. Usually testing takes place using HTTP, not HTTPS, and on localhost, not your production domain. If you would like your development environment to mimic production with complete Host blocking, SSL redirects, and STS headers, leave this as false
