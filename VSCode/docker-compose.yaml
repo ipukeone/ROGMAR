@@ -1,0 +1,73 @@
+---
+services:
+
+### Docker socket proxy
+  socketproxy:
+    image: ${SOCKETPROXY_IMAGE:?Image required}
+    container_name: ${TRAEFIK_HOSTNAME}-socketproxy
+    hostname: ${TRAEFIK_HOSTNAME}-socketproxy
+    restart: unless-stopped
+    read_only: true                                                                                                                                             # Make the container filesystem read-only
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # ports:
+    #   - 2375:2375
+    tmpfs:                                                                                                                                                      # Mount volumes to tmpfs (RAM) to make it writeable
+      - /run
+    volumes:
+      - /etc/localtime:/etc/localtime:ro                                                                                                                        # Localtime
+      - /etc/timezone:/etc/timezone:ro                                                                                                                          # Timezone
+      - /var/run/docker.sock:/var/run/docker.sock:ro                                                                                                            # Docker.sock volume
+    environment:
+      LOG_LEVEL: err                                                                                                                                            # Possible values are: debug, info, notice, warning, err, crit, alert and emerg
+      CONTAINERS: 1                                                                                                                                             # "/containers" permissions (start, restart, stop, kill)
+      IMAGES: 1                                                                                                                                                 # "/images" permissions
+      INFO: 1                                                                                                                                                   # "/info" permissions
+      NETWORKS: 1                                                                                                                                               # "/networks" permissions
+      SERVICES: 1                                                                                                                                               # "/services" permissions
+      TASKS: 1                                                                                                                                                  # "/tasks" permissions
+      VOLUMES: 1                                                                                                                                                # "/volumes" permissions
+    networks:
+      - backend
+
+### VSCode
+  vscode:
+    image: ${IMAGE}
+    container_name: ${TRAEFIK_HOSTNAME}
+    hostname: ${TRAEFIK_HOSTNAME}
+    restart: unless-stopped
+    # cap_drop:
+    #   - ALL
+    security_opt:
+      - no-new-privileges:true
+    # ports:
+    #   - 8443:8443
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.rule=Host(`${TRAEFIK_HOSTNAME}.${TRAEFIK_DOMAIN}`)"                                                       # FQDN
+      - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.middlewares=authentik-proxy@file"                                                                         # Middlewares: Authentik proxy authentication
+      - "traefik.http.services.${TRAEFIK_HOSTNAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT}"                                                                # Port
+    volumes:
+      - /etc/localtime:/etc/localtime:ro                                                                                                                        # Localtime
+      - /etc/timezone:/etc/timezone:ro                                                                                                                          # Timezone
+      - ./config:/config/:rw                                                                                                                                    # VSCode configuration files
+      - ${LOCAL_PATH}:/compose/:rw                                                                                                                              # Path to the files I want to edit
+    environment:
+      PUID: 0
+      PGID: 0
+      DEFAULT_WORKSPACE: /compose                                                                                                                               # If this optional variable is set, code-server will open this directory by default
+      DOCKER_MODS: "linuxserver/mods:universal-docker"                                                                                                          # Install Docker-CLI
+      DOCKER_HOST: tcp://${TRAEFIK_HOSTNAME}-socketproxy:2375                                                                                                   # Connect to socketproxy
+    networks:
+      - frontend
+      - backend
+
+networks:
+  frontend:
+    external: true
+    driver: bridge
+  backend:
+    external: true
+    driver: bridge
