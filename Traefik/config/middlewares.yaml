@@ -7,8 +7,8 @@ http:
     websocket-security-headers:
       headers:
         customRequestHeaders:                                                                                                                                   # The customRequestHeaders option lists the header names and values to apply to the request
-          Connection: "upgrade"                                                                                                                                 # Part of the WebSocket handshake - **mandatory** (Collabora, OnlyOffice, ...)
           Upgrade: "websocket"                                                                                                                                  # Enables WebSocket communication - **mandatory** for live editing (Collabora, OnlyOffice, ...)
+          Connection: "Upgrade"                                                                                                                                 # Part of the WebSocket handshake - **mandatory** (Collabora, OnlyOffice, ...)
 
     ## Authentik proxy
     authentik-proxy:                                                                                                                                            # Forward to authentik to authenticate before accessing the website
@@ -67,7 +67,7 @@ http:
           X-Forwarded-Proto: "https"
           server: ""
           X-Download-Options: "noopen"
-          Cache-Control: "no-store, no-cache, must-revalidate"
+          # Cache-Control: "no-store, no-cache, must-revalidate"
         # accessControlAllowCredentials:                                                                                                                          # The accessControlAllowCredentials indicates whether the request can include user credentials
         # accessControlAllowHeaders:                                                                                                                              # The accessControlAllowHeaders indicates which header field names can be used as part of the request
         # accessControlAllowMethods:                                                                                                                              # The accessControlAllowMethods indicates which methods can be used during requests

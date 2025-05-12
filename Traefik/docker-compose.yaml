@@ -5,13 +5,17 @@ services:
   socketproxy:
     image: ${SOCKETPROXY_IMAGE:?Image required}
     container_name: ${TRAEFIK_HOSTNAME}-socketproxy
+    hostname: ${TRAEFIK_HOSTNAME}-socketproxy
     restart: unless-stopped
+    read_only: true                                                                                                                                             # Make the container filesystem read-only
     cap_drop:
       - ALL
     security_opt:
       - no-new-privileges:true
     # ports:
     #   - 2375:2375
+    tmpfs:                                                                                                                                                      # Mount volumes to tmpfs (RAM) to make it writeable
+      - /run
     volumes:
       - /etc/localtime:/etc/localtime:ro                                                                                                                        # Localtime
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Timezone
@@ -26,6 +30,7 @@ services:
   traefik:
     image: ${IMAGE:?Image required}
     container_name: ${TRAEFIK_HOSTNAME}
+    hostname: ${TRAEFIK_HOSTNAME}
     command:
       ### Enable the Traefik WebUI dashboard
       - --api=true
@@ -101,9 +106,9 @@ services:
       # - 8080:8080
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.rule=Host(`${TRAEFIK_HOSTNAME}.${TRAEFIK_DOMAIN}`)"
-      - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.middlewares=authentik-proxy@file"
-      - "traefik.http.services.${TRAEFIK_HOSTNAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT}"
+      - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.rule=Host(`${TRAEFIK_HOSTNAME}.${TRAEFIK_DOMAIN}`)"                                                       # FQDN
+      - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.middlewares=authentik-proxy@file"                                                                         # Middlewares: Authentik proxy authentication
+      - "traefik.http.services.${TRAEFIK_HOSTNAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT}"                                                                # Port
     volumes:
       - /etc/localtime:/etc/localtime:ro                                                                                                                        # Localtime
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Timezone
@@ -133,5 +138,7 @@ secrets:
 networks:
   frontend:
     external: true
+    driver: bridge
   backend:
     external: true
+    driver: bridge
