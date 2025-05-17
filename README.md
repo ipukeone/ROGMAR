@@ -17,14 +17,66 @@ This repository contains reusable Docker Compose templates for various services 
 
 ## Usage
 
-1. Clone your project repo (e.g., Traefik):
+### 1. Download a Single Folder from GitHub Repo (e.g., `Template`)
+
+This script downloads **only one specific folder** from the GitHub repository and places it in your current directory, using the same folder name as in the repo. No `.git` folder or other files are included.
+
+#### How to use
+
+1. Make the script executable:
 
 ```bash
-git clone https://github.com/saervices/nextcloud.git
-cd nextcloud
+chmod +x get-folder.sh
 ```
 
-2. Run the setup script:
+2. Run the script with the folder name from the repo as the argument:
+
+```bash
+./get-folder.sh Template
+```
+
+This will:
+
+- Clone the repo with minimal data (no full history)  
+- Checkout only the specified folder (`Template`)  
+- Move that folder to your current directory  
+- Remove all temporary files  
+
+#### Script content (`get-folder.sh`)
+
+```bash
+#!/bin/bash
+
+# Folder name in the repo to download
+FOLDER="$1"
+
+# Check if folder name is provided
+if [ -z "$FOLDER" ]; then
+  echo "Usage: $0 <folder-in-repo>"
+  exit 1
+fi
+
+# Temporary directory for sparse checkout
+mkdir .git-tmp
+
+# Clone repo without checking out files and without full history
+git clone --filter=blob:none --no-checkout https://github.com/saervices/Docker.git .git-tmp
+
+# Enable sparse checkout and set the folder to download
+git -C .git-tmp sparse-checkout init --cone
+git -C .git-tmp sparse-checkout set "$FOLDER"
+
+# Checkout the branch (adjust if your default branch is not main)
+git -C .git-tmp checkout main
+
+# Move the folder from temp directory to current working directory
+mv ".git-tmp/$FOLDER" ./
+
+# Clean up temporary directory
+rm -rf .git-tmp
+```
+
+### 2. Run the setup script:
 
 ```bash
 ./run.sh
