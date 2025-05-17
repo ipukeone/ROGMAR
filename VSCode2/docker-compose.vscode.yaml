@@ -1,0 +1,10 @@
+x-required-services:
+  - redis
+  - postgres
+
+services:
+  vscode2:
+    image: nextcloud
+    depends_on:
+      - redis
+      - postgres

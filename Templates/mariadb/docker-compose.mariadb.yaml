@@ -1,0 +1,32 @@
+---
+services:
+
+### Redis
+  redis:
+    image: ${REDIS_IMAGE:?Image required}
+    container_name: ${TRAEFIK_HOSTNAME}-redis
+    hostname: ${TRAEFIK_HOSTNAME}-redis
+    command: ['/bin/sh', '-c', 'redis-server --save 60 1 --loglevel warning --requirepass "$$(cat /run/secrets/${REDIS_PASSWORD_FILENAME})"']
+    restart: unless-stopped
+    user: '999:1000'                                                                                                                                            # Redis user in the container
+    read_only: true                                                                                                                                             # Makes the entire root filesystem of the container read-only except the mounted volumes
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ['CMD-SHELL', 'redis-cli --pass "$$(cat /run/secrets/${REDIS_PASSWORD_FILENAME})" ping | grep PONG']
+      start_period: 10s
+      interval: 30s
+      retries: 5
+      timeout: 5s
+    tmpfs:                                                                                                                                                      # A tmpfs mount is an in-memory (RAM) temporary filesystem. It behaves like a writable directory, but its contents are never written to disk and are cleared on container restart
+      - /tmp
+    volumes:
+      - /etc/localtime:/etc/localtime:ro                                                                                                                        # Localtime
+      - /etc/timezone:/etc/timezone:ro                                                                                                                          # Timezone
+      - redis:/data:rw                                                                                                                                          # Redis database
+    secrets:
+      - ${REDIS_PASSWORD_FILENAME}
+    networks:
+      - backend
