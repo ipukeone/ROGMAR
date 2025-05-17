@@ -56,6 +56,17 @@ if [ -z "$FOLDER" ]; then
   return 0 2>/dev/null || exit 0
 fi
 
+# Check if target folder already exists
+if [ -d "$FOLDER" ]; then
+  echo "[WARN] Folder '$FOLDER' already exists."
+  read -p "Overwrite it? [y/N]: " confirm
+  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+    echo "[INFO] Aborted."
+    return 0 2>/dev/null || exit 0
+  fi
+  rm -rf "$FOLDER"
+fi
+
 # Temporary directory for sparse checkout
 mkdir -p .git-tmp
 
@@ -69,7 +80,7 @@ git -C .git-tmp sparse-checkout set "$FOLDER" &>/dev/null
 # Checkout the branch
 git -C .git-tmp checkout main &>/dev/null
 
-# Check if folder exists
+# Check if folder exists in the repo
 if [ ! -d ".git-tmp/$FOLDER" ]; then
   echo "[ERROR] Folder '$FOLDER' not found in repo."
   rm -rf .git-tmp
