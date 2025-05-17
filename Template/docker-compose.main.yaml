@@ -1,0 +1,11 @@
+version: '3.9'
+
+x-required-services:
+  - redis
+
+services:
+  alpine:
+    image: alpine
+    command: ["sleep", "infinity"]
+    depends_on:
+      - redis
