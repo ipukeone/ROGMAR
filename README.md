@@ -79,7 +79,7 @@ rm -rf .git-tmp
 ### 2. Run the setup script:
 
 ```bash
-./run.sh
+chmod +x run.sh && ./run.sh
 ```
 
 - On first run, the script downloads or updates the **templates repo in the background**, creates symlinks for the required services (defined in `docker-compose.main.yaml`), merges `.env` files into `.env.generated`, and copies secrets. It does **not** start Docker Compose yet.
