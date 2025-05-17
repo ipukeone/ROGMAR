@@ -68,7 +68,7 @@ if [ -d "$LOCAL_CACHE_DIR/.git" ]; then
   fi
 else
   echo "📥 Cloning template repository (only 'templates/')..."
-  $DRY_RUN || git init "$LOCAL_CACHE_DIR"
+  $DRY_RUN || git init --initial-branch=main "$LOCAL_CACHE_DIR" &> /dev/null
   $DRY_RUN || git -C "$LOCAL_CACHE_DIR" remote add origin "$GIT_REPO_URL"
   $DRY_RUN || git -C "$LOCAL_CACHE_DIR" config core.sparseCheckout true
   $DRY_RUN || echo "templates/" > "$LOCAL_CACHE_DIR/.git/info/sparse-checkout"
