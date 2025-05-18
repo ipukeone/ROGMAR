@@ -93,6 +93,12 @@ mv ".git-tmp/$FOLDER" ./
 # Clean up
 rm -rf .git-tmp
 
+# Make run.sh executable if present
+if [ -f "$FOLDER/run.sh" ]; then
+  chmod +x "$FOLDER/run.sh"
+  echo "[INFO] Made '$FOLDER/run.sh' executable."
+fi
+
 echo "[INFO] Folder '$FOLDER' downloaded successfully."
 ```
 

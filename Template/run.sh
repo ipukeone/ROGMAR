@@ -1,208 +1,439 @@
-#!/bin/bash
-
-# ------------------------------------------------------------------------------
-# run.sh – Docker Compose Template Sync & Setup Script
-#
-# Features:
-# - Clones or updates a template repo from GitHub
-# - Copies required docker-compose.*.yaml files based on main file (with --force overwrite)
-# - Merges .env files from templates into a hash-based .env.generated.<hash>.env file
-# - Creates a symlink .env.generated → latest merged file
-# - Copies any required secrets from template directories only once
-# - Cleans up older .env.generated.<hash>.env files (retains last 5)
-# - Uses a lockfile to track template version (commit hash)
-#
-# Usage:
-# ./run.sh            # First run: initializes templates, does NOT start Docker
-# ./run.sh            # Second run: starts Docker Compose using generated files
-# ./run.sh --force    # Forces update from GitHub and overwrites files
-# ./run.sh --dry-run  # Simulates what would happen without changing anything
-#
-# Requires:
-# - docker-compose.main.yaml with x-required-services
-# - local Docker installation
-# ------------------------------------------------------------------------------
-
+#!/usr/bin/env bash
 set -e
 
-GIT_REPO_URL="https://github.com/saervices/Docker"
-LOCAL_CACHE_DIR="./.template-cache"
-TEMPLATE_REPO="$LOCAL_CACHE_DIR/templates"
-LOCKFILE=".template.lock"
-MAIN_COMPOSE="docker-compose.main.yaml"
-SECRETS_DIR="secrets"
-BACKUP_DIR="./backup-$(date +%Y%m%d-%H%M%S)"
-DRY_RUN=false
-FORCE_UPDATE=false
-START_COMPOSE=true
-ENV_HASH_CONTENT=""
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Usage:
+#   ./run.sh [--dry-run] [--force] [--update]
+#
+# Description:
+#   This script automates the setup of Docker Compose projects using Git-based templates.
+#   It fetches templates from a remote repo, backs up existing compose files,
+#   copies required service compose files and secrets, merges .env files and docker-compose files,
+#   and optionally starts Docker Compose with the merged configuration.
+#
+# Options:
+#   --dry-run    Simulate actions without making any changes (no files modified).
+#   --force      Force update of templates and compose files, ignoring the lockfile.
+#   --update     Only update Docker images (skip template merge and file generation).
+#
+# Example:
+#   ./run.sh --force       # Force refresh templates and regenerate compose files.
+#   ./run.sh --dry-run     # Show what would be done without applying changes.
+#   ./run.sh --update      # Just pull the latest Docker images for merged services.
+#
+# Created by Særvices © 2025 — https://github.com/saervices
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
-# Parse CLI arguments
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --dry-run)
-      DRY_RUN=true
-      echo "→ Dry-run enabled: No actual changes will be made."
-      ;;
-    --force)
-      FORCE_UPDATE=true
-      echo "⚠️  Force update enabled: Templates and compose files will be refreshed."
-      ;;
-    *)
-      echo "❓ Unknown argument: $1"
-      exit 1
-      ;;
-  esac
-  shift
-done
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Constants
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
+# Git repository and local cache settings
+# ──────────────────────────────────────────────────────────────────────────────
+GIT_REPO_URL="https://github.com/saervices/Docker"                              # URL to the Docker templates Git repo
+LOCAL_CACHE_DIR="./.template-cache"                                             # Local folder to cache the repo
+TEMPLATE_REPO="$LOCAL_CACHE_DIR/templates"                                      # Path inside cache where templates live
+LOCKFILE=".template.lock"                                                       # File storing the currently used template commit hash
 
-echo "🌐 Checking for template updates from $GIT_REPO_URL..."
+# ──────────────────────────────────────────────────────────────────────────────
+# Docker Compose related files and directories
+# ──────────────────────────────────────────────────────────────────────────────
+MAIN_COMPOSE="docker-compose.main.yaml"                                         # Main docker-compose file with service list
+MERGED_COMPOSE="docker-compose.merged.yaml"                                     # Final merged docker-compose file generated by script
+SECRETS_DIR="secrets"                                                           # Directory to store secrets from templates
+ENV_GENERATED=".env.generated"                                                  # Name for the generated environment file
 
-# Clone or update the template repo (sparse checkout of /templates)
-if [ -d "$LOCAL_CACHE_DIR/.git" ]; then
-  echo "🔄 Updating sparse-checkout of templates..."
-  if [ "$FORCE_UPDATE" = true ]; then
-    $DRY_RUN || git -C "$LOCAL_CACHE_DIR" pull --quiet
-  else
-    echo "💤 Skipping update – use --force to refresh templates."
-  fi
-else
-  echo "📥 Cloning template repository (only 'templates/')..."
-  $DRY_RUN || git init --initial-branch=main "$LOCAL_CACHE_DIR" &> /dev/null
-  $DRY_RUN || git -C "$LOCAL_CACHE_DIR" remote add origin "$GIT_REPO_URL"
-  $DRY_RUN || git -C "$LOCAL_CACHE_DIR" config core.sparseCheckout true
-  $DRY_RUN || echo "templates/" > "$LOCAL_CACHE_DIR/.git/info/sparse-checkout"
-  DEFAULT_BRANCH=$(git ls-remote --symref "$GIT_REPO_URL" HEAD | grep 'ref:' | awk '{print $2}' | sed 's@refs/heads/@@')
-  $DRY_RUN || git -C "$LOCAL_CACHE_DIR" pull --depth=1 origin "$DEFAULT_BRANCH"
-fi
+# ──────────────────────────────────────────────────────────────────────────────
+# Backup settings
+# ──────────────────────────────────────────────────────────────────────────────
+BACKUP_DIR="./backup"                                                           # Where old compose files are backed up
+MAX_BACKUPS=2                                                                   # Max number of backup files to keep
 
-TEMPLATE_VERSION=$(git -C "$LOCAL_CACHE_DIR" rev-parse HEAD)
-echo "📌 Using template version: $TEMPLATE_VERSION"
+# ──────────────────────────────────────────────────────────────────────────────
+# Script control flags (default values)
+# ──────────────────────────────────────────────────────────────────────────────
+DRY_RUN=false                                                                   # If true, script will simulate actions without changing files
+FORCE_UPDATE=false                                                              # Force update of templates and compose files, ignoring lockfile
+START_COMPOSE=true                                                              # Automatically start docker-compose after setup
+UPDATE_IMAGES=false                                                             # if true, script will update all images (docker pull)
 
-# Determine first run or already up to date
-if [[ -f "$LOCKFILE" && "$FORCE_UPDATE" = false ]]; then
-  CURRENT_LOCK=$(cat "$LOCKFILE")
-  if [[ "$CURRENT_LOCK" == "$TEMPLATE_VERSION" ]]; then
-    echo "✅ Templates already up-to-date (lockfile: $LOCKFILE)"
-  else
-    echo "ℹ️  Template updates available. Run with --force to apply."
-    exit 0
-  fi
-else
-  echo "🆕 First-time setup or forced update. Skipping Docker Compose startup."
-  START_COMPOSE=false
-  if [[ ! -f "$LOCKFILE" ]]; then
-    echo "⚠️  First run detected: forcing template files copy"
-    FORCE_UPDATE=true
-  fi
-fi
+# ──────────────────────────────────────────────────────────────────────────────
+# Logging settings
+# ──────────────────────────────────────────────────────────────────────────────
+LOG_DIR="./logs"                                                                # Directory to store log files
+TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")                                          # Timestamp string for unique log filenames
+LOG_FILE="$LOG_DIR/run.$TIMESTAMP.log"                                          # Path to the current log file
+LOG_RETENTION_COUNT=2                                                           # Number of log files to keep (old ones will be deleted automatically)
 
-# Extract required services from main compose
-echo "🔍 Parsing $MAIN_COMPOSE for required services..."
-REQUIRES=$(grep -A10 'x-required-services:' "$MAIN_COMPOSE" | grep '-' | awk '{print $2}')
-[ -z "$REQUIRES" ] && echo "⚠️  No services found in x-required-services." && exit 1
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Logging function: prints to stdout AND appends to log file
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+mkdir -p "$LOG_DIR"
+log() {
+  echo "$@" | tee -a "$LOG_FILE"
 
-$DRY_RUN || mkdir -p "$SECRETS_DIR"
-declare -A seen_vars
-ENV_TMP_FILE=$(mktemp)
-
-# Loop over required templates
-for service in $REQUIRES; do
-  compose_file="docker-compose.${service}.yaml"
-  template_dir="$TEMPLATE_REPO/$service"
-  template_env="$template_dir/.env"
-  template_compose="$template_dir/docker-compose.$service.yaml"
-  template_secrets="$template_dir/secrets"
-
-  # Backup old compose
-  if [ -f "$compose_file" ] && [ "$FORCE_UPDATE" = true ]; then
-    echo "🛡️ Backing up existing $compose_file to $BACKUP_DIR/"
-    $DRY_RUN || mkdir -p "$BACKUP_DIR"
-    $DRY_RUN || cp "$compose_file" "$BACKUP_DIR/"
-  fi
-
-  # Copy compose file
-  if [ ! -f "$compose_file" ] || [ "$FORCE_UPDATE" = true ]; then
-    echo "📋 Copying compose file: $compose_file"
-    $DRY_RUN || cp -f "$template_compose" "$compose_file"
-  else
-    echo "✅ Compose file already exists: $compose_file"
-  fi
-
-  # Merge .env content to temp
-  if [ -f "$template_env" ]; then
-    echo "📦 Importing .env from $service"
-    while IFS= read -r line; do
-      [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue
-      key=$(echo "$line" | cut -d= -f1)
-      [ -n "${seen_vars[$key]}" ] && echo "⚠️  WARNING: Variable $key duplicated (now in $service)"
-      seen_vars["$key"]=1
-      $DRY_RUN || echo "$line" >> "$ENV_TMP_FILE"
-    done < "$template_env"
-    $DRY_RUN || echo "" >> "$ENV_TMP_FILE"
-  fi
-
-  # Copy secrets if missing
-  if [ -d "$template_secrets" ]; then
-    echo "🔐 Checking secrets for $service"
-    for file in "$template_secrets"/*; do
-      name=$(basename "$file")
-      dest="$SECRETS_DIR/$name"
-      if [ -f "$dest" ]; then
-        echo "🔒 Secret '$name' exists – skipping"
-      else
-        echo "➕ Copying new secret: $name"
-        $DRY_RUN || cp "$file" "$dest"
-      fi
+  local logs=( $(ls -1t "$LOG_DIR"/run.*.log 2>/dev/null) )
+  if [ "${#logs[@]}" -gt "$LOG_RETENTION_COUNT" ]; then
+    for old_log in "${logs[@]:$LOG_RETENTION_COUNT}"; do
+      rm -f "$old_log"
     done
   fi
-done
+}
 
-# Append local .env
-if [ -f ".env" ]; then
-  echo "📦 Appending local .env"
-  while IFS= read -r line; do
-    [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue
-    key=$(echo "$line" | cut -d= -f1)
-    [ -n "${seen_vars[$key]}" ] && echo "⚠️  WARNING: Variable $key duplicated (now in local .env)"
-    seen_vars["$key"]=1
-    $DRY_RUN || echo "$line" >> "$ENV_TMP_FILE"
-  done < ".env"
-fi
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Argument parsing
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+parse_cli_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --dry-run)
+        DRY_RUN=true
+        log "→ Dry-run enabled: No actual changes will be made."
+        ;;
+      --force)
+        FORCE_UPDATE=true
+        log "⚠️  Force update enabled: Templates and compose files will be refreshed."
+        ;;
+      --update)
+        UPDATE_IMAGES=true
+        log "⬆️ Update flag set: Docker images will be pulled."
+        ;;
+      *)
+        log "❓ Unknown argument: $1"
+        return
+        ;;
+    esac
+    shift
+  done
+}
 
-# Generate final hash-based env file
-if [ "$DRY_RUN" = false ]; then
-  ENV_HASH=$(sha256sum "$ENV_TMP_FILE" | cut -c1-12)
-  ENV_FINAL=".env.generated.$ENV_HASH.env"
-  mv "$ENV_TMP_FILE" "$ENV_FINAL"
-  ln -sf "$ENV_FINAL" .env.generated
-  echo "🧬 Created env file: $ENV_FINAL → .env.generated"
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Prerequisites
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+check_install_yq() {
+  if command -v yq &> /dev/null; then return 0; fi
 
-  # Update lockfile
-  echo "$TEMPLATE_VERSION" > "$LOCKFILE"
+  log "❌ 'yq' is required but not installed."
+  read -p "Do you want to install yq now? [Y/n] " answer
+  answer=${answer:-Y}
+  if [[ "$answer" =~ ^[Yy]$ ]]; then
+    log "⬇️ Installing yq..."
+    if [[ "$(uname)" == "Darwin" ]]; then
+      if command -v brew &> /dev/null; then
+        brew install yq
+      else
+        log "Homebrew not found. Install yq manually: https://github.com/mikefarah/yq/releases"
+        exit 1
+      fi
+    elif [[ "$(uname)" == "Linux" ]]; then
+      sudo curl -L "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64" -o /usr/local/bin/yq
+      sudo chmod +x /usr/local/bin/yq
+    else
+      log "Unsupported OS. Install manually: https://github.com/mikefarah/yq/releases"
+      exit 1
+    fi
+    command -v yq &> /dev/null || { log "❌ yq install failed."; exit 1; }
+    log "✅ yq installed."
+  else
+    log "❌ yq is required. Aborting."
+    exit 1
+  fi
+}
 
-  # Cleanup old env.generated.*.env (keep last 5)
-  echo "🧹 Cleaning up old env files..."
-  find . -maxdepth 1 -type f -name ".env.generated.*.env" \
-    | sort -r | tail -n +6 | xargs -r rm -v
-else
-  echo "✅ Dry-run complete. Skipping final .env.generated generation."
-  rm -f "$ENV_TMP_FILE"
-fi
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Template repo management
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+fetch_templates() {
+  log "🌐 Checking for template updates from $GIT_REPO_URL..."
 
-# Verify compose files
-echo "🧪 Verifying docker-compose files..."
-for service in $REQUIRES; do
-  file="docker-compose.${service}.yaml"
-  [ -f "$file" ] || { echo "❌ Missing $file. Re-run with --force."; exit 1; }
-  echo "✅ Found: $file"
-done
+  if [ -d "$LOCAL_CACHE_DIR/.git" ]; then
+    log "🔄 Updating sparse-checkout of templates..."
+    if [ "$FORCE_UPDATE" = true ]; then
+      $DRY_RUN || git -C "$LOCAL_CACHE_DIR" pull --quiet &> /dev/null
+    else
+      log "💤 Skipping update – use --force to refresh templates."
+    fi
+  else
+    log "📥 Cloning template repository (only 'templates/')..."
+    $DRY_RUN || git init --initial-branch=main "$LOCAL_CACHE_DIR" &> /dev/null
+    $DRY_RUN || git -C "$LOCAL_CACHE_DIR" remote add origin "$GIT_REPO_URL" &> /dev/null
+    $DRY_RUN || git -C "$LOCAL_CACHE_DIR" config core.sparseCheckout true &> /dev/null
+    $DRY_RUN || echo "templates/" > "$LOCAL_CACHE_DIR/.git/info/sparse-checkout"
+    DEFAULT_BRANCH=$(git ls-remote --symref "$GIT_REPO_URL" HEAD 2>/dev/null | grep 'ref:' | awk '{print $2}' | sed 's@refs/heads/@@')
+    $DRY_RUN || git -C "$LOCAL_CACHE_DIR" pull --depth=1 origin "$DEFAULT_BRANCH" &> /dev/null
+  fi
 
-# Start Docker Compose
-if [ "$DRY_RUN" = false ] && [ "$START_COMPOSE" = true ]; then
-  echo "🚀 Starting Docker Compose..."
-  COMPOSE_FILES=$(find . -maxdepth 1 -name "docker-compose.*.yaml" ! -name "*main*" -exec echo -f {} \;)
-  docker compose -f "$MAIN_COMPOSE" $COMPOSE_FILES --env-file .env.generated up -d
-else
-  echo "ℹ️  Setup complete. Review .env.generated if needed. Re-run script to start Docker Compose."
-fi
+  TEMPLATE_VERSION=$(git -C "$LOCAL_CACHE_DIR" rev-parse HEAD 2>/dev/null || echo "")
+  log "📌 Using template version: $TEMPLATE_VERSION"
+}
+
+check_template_state() {
+  if [[ "$DRY_RUN" = true ]]; then
+    log "💡 Dry-run: Skipping lockfile checks."
+    return
+  fi
+
+  if [[ -f "$LOCKFILE" && "$FORCE_UPDATE" = false ]]; then
+    CURRENT_LOCK=$(cat "$LOCKFILE")
+    if [[ "$CURRENT_LOCK" == "$TEMPLATE_VERSION" ]]; then
+      log "✅ Templates already up-to-date (lockfile: $LOCKFILE)"
+    else
+      log "ℹ️  Template updates available. Run with --force to apply."
+      return
+    fi
+  else
+    if [[ "$FORCE_UPDATE" = true ]]; then
+      log "♻️  Forcing template update despite existing lockfile."
+    else
+      log "🆕 First-time setup or no lockfile. Skipping Docker Compose startup."
+      START_COMPOSE=false
+      [[ ! -f "$LOCKFILE" ]] && log "⚠️  First run detected: forcing template files copy" && FORCE_UPDATE=true
+    fi
+  fi
+}
+
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Compose files + secrets
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+parse_required_services() {
+  log "🔍 Parsing $MAIN_COMPOSE for required services..."
+  REQUIRES=$(grep -A10 'x-required-services:' "$MAIN_COMPOSE" 2> /dev/null | grep '-' | awk '{print $2}' | sort -u)
+  if [ -z "$REQUIRES" ]; then
+    log "⚠️  No services found in x-required-services."
+    [ "$DRY_RUN" = true ] || return
+  fi
+  $DRY_RUN || mkdir -p "$SECRETS_DIR"
+}
+
+backup_existing_compose() {
+  if [[ "$FORCE_UPDATE" = true && -f "$LOCKFILE" ]]; then
+    log "🛡️ Backing up existing compose files to $BACKUP_DIR/"
+    mkdir -p "$BACKUP_DIR"
+    for f in docker-compose.*.yaml; do
+      if [[ "$f" != "$MERGED_COMPOSE" && -f "$f" ]]; then
+        cp "$f" "$BACKUP_DIR/${f}.${TEMPLATE_VERSION:0:12}"
+        log "  - Backed up $f"
+      fi
+    done
+  else
+    return
+  fi
+
+  # Clean old backups
+  if [ -d "$BACKUP_DIR" ]; then
+    log "🧹 Cleaning up old backups..."
+    files=( $(ls -1t "$BACKUP_DIR"/* 2>/dev/null) )
+    if [ "${#files[@]}" -gt "$MAX_BACKUPS" ]; then
+      for f in "${files[@]:$MAX_BACKUPS}"; do
+        log "🗑️ Deleting old backup file: $f"
+        rm -f "$f"
+      done
+    fi
+  fi
+}
+
+copy_templates_and_secrets() {
+  for service in $REQUIRES; do
+    compose_file="docker-compose.${service}.yaml"
+    template_dir="$TEMPLATE_REPO/$service"
+    template_compose="$template_dir/docker-compose.$service.yaml"
+    template_secrets="$template_dir/secrets"
+
+    if [ ! -f "$compose_file" ] || [ "$FORCE_UPDATE" = true ]; then
+      log "📋 Copying compose file: $compose_file"
+      $DRY_RUN || cp -f "$template_compose" "$compose_file"
+    else
+      log "✅ Compose file exists: $compose_file"
+    fi
+
+    if [ -d "$template_secrets" ]; then
+      log "🔐 Checking secrets for $service"
+      for file in "$template_secrets"/*; do
+        name=$(basename "$file")
+        dest="$SECRETS_DIR/$name"
+        if [ -f "$dest" ]; then
+          log "🔒 Secret '$name' exists – skipping"
+        else
+          log "➕ Copying new secret: $name"
+          $DRY_RUN || cp "$file" "$dest"
+        fi
+      done
+    fi
+  done
+}
+
+merge_env_files() {
+  local output_file=$ENV_GENERATED
+  local tmp_file
+  tmp_file=$(mktemp)
+  declare -A seen_vars=()
+
+  process_env_file() {
+    local file=$1 source_name=$2
+    while IFS= read -r line || [ -n "$line" ]; do
+      [[ "$line" =~ ^#.*$ || -z "$line" ]] && echo "$line" >> "$tmp_file" && continue
+      local key="${line%%=*}"
+      [[ -z "$key" ]] && echo "$line" >> "$tmp_file" && continue
+      if [[ -n "${seen_vars[$key]}" ]]; then
+        log "⚠️ Duplicate variable '$key' found in $source_name (already from ${seen_vars[$key]}), skipping."
+      else
+        seen_vars["$key"]=$source_name
+        line="$(echo "$line" | sed -E 's/^[[:space:]]*([^=[:space:]]+)[[:space:]]*=[[:space:]]*(.*)$/\1=\2/')"
+        echo "$line" >> "$tmp_file"
+      fi
+    done < "$file"
+    echo "" >> "$tmp_file"
+  }
+
+  > "$tmp_file"
+  [[ -f ".env" ]] && process_env_file ".env" "local .env"
+  for service in $REQUIRES; do
+    [[ -f "$TEMPLATE_REPO/$service/.env" ]] && process_env_file "$TEMPLATE_REPO/$service/.env" "template $service"
+  done
+  mv "$tmp_file" "$output_file"
+  log "✅ Merged .env into $output_file"
+}
+
+merge_compose_files() {
+  echo "🔗 Merging docker-compose files..."
+
+  TMP_DIR=$(mktemp -d)
+  MERGE_INPUTS=()
+
+  for f in docker-compose.*.yaml; do
+    [[ "$f" == "$MERGED_COMPOSE" ]] && continue
+
+    tmpf="$TMP_DIR/$(basename "$f")"
+
+    # Clean file: remove x-required-services, comments, and ---
+    yq 'del(.["x-required-services"])' "$f" | sed '/^---$/d' | sed 's/\s*#.*$//' > "$tmpf"
+
+    # Get list of services
+    services=$(yq e '.services | keys | .[]' "$tmpf")
+
+    # For each service, add env_file if missing
+    for svc in $services; do
+      # Check if env_file exists for service
+      has_env=$(yq e ".services.\"$svc\".env_file" "$tmpf")
+
+      if [ "$has_env" == "null" ]; then
+        yq e -i ".services.\"$svc\".env_file = [\"$ENV_GENERATED\"]" "$tmpf"
+      fi
+    done
+
+    MERGE_INPUTS+=("$tmpf")
+  done
+
+  merge_key() {
+    local key="$1"
+    local files=("${MERGE_INPUTS[@]}")
+    yq eval-all "select(has(\"$key\")) | .$key" "${files[@]}" |
+      yq eval-all 'select(tag == "!!map") | . as $item ireduce ({}; . * $item)' -
+  }
+
+  services=$(merge_key services)
+  volumes=$(merge_key volumes)
+  secrets=$(merge_key secrets)
+  networks=$(merge_key networks)
+
+  {
+    echo "version: '3.9'"
+    echo ""
+    echo "services:"
+    echo "$services" | yq eval '.' - | sed 's/^/  /'
+    echo ""
+    echo "volumes:"
+    echo "$volumes" | yq eval '.' - | sed 's/^/  /'
+    echo ""
+    echo "secrets:"
+    echo "$secrets" | yq eval '.' - | sed 's/^/  /'
+    echo ""
+    echo "networks:"
+    echo "$networks" | yq eval '.' - | sed 's/^/  /'
+  } > "$MERGED_COMPOSE"
+
+  rm -rf "$TMP_DIR"
+  echo "✅ Created merged compose file: $MERGED_COMPOSE"
+}
+
+verify_compose_files() {
+  log "🧪 Verifying docker-compose files..."
+  for service in $REQUIRES; do
+    file="docker-compose.${service}.yaml"
+    if [ ! -f "$file" ]; then
+      if [ "$DRY_RUN" = false ]; then
+        log "❌ Missing $file. Re-run with --force."
+        return
+      else
+        log "⚠️  Dry-run: Would be missing $file."
+      fi
+    else
+      log "✅ Found: $file"
+    fi
+  done
+}
+
+cleanup_cache() {
+  if [ -d "$LOCAL_CACHE_DIR" ]; then
+    log "🧹 Cleaning up template cache directory: $LOCAL_CACHE_DIR"
+    $DRY_RUN || rm -rf "$LOCAL_CACHE_DIR"
+  fi
+}
+
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Docker management
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+pull_docker_images() {
+  log "⬇️ Pulling latest Docker images for services from $MERGED_COMPOSE..."
+
+  if [[ -f "$ENV_GENERATED" ]]; then
+    log "📄 Loading environment variables from $ENV_GENERATED"
+    set -a
+    # shellcheck source=/dev/null
+    source "$ENV_GENERATED"
+    set +a
+  else
+    log "⚠️ Env file $ENV_GENERATED not found. Cannot resolve image variables."
+    return 1
+  fi
+
+  services=$(yq e '.services | keys | .[]' "$MERGED_COMPOSE")
+  for svc in $services; do
+    image_raw=$(yq e ".services.\"$svc\".image" "$MERGED_COMPOSE")
+    image=$(eval echo "$image_raw")
+    if [[ "$image" != "null" && -n "$image" ]]; then
+      log "⬇️ Pulling image for service $svc: $image"
+      docker pull "$image" --quiet >/dev/null 2>&1
+    else
+      log "⚠️ No image defined for service $svc, skipping."
+    fi
+  done
+}
+
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Main
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+main() {
+  parse_cli_args "$@"
+  check_install_yq
+  fetch_templates
+  check_template_state
+  parse_required_services
+  [ "$DRY_RUN" = false ] && backup_existing_compose || log "💡 Dry-run: Skipping Backing up existing compose files."
+  copy_templates_and_secrets
+  [ "$DRY_RUN" = false ] && merge_env_files || log "💡 Dry-run: Skipping .env.generated creation."
+  [ "$DRY_RUN" = false ] && merge_compose_files || log "💡 Dry-run: Skipping $MERGED_COMPOSE generation."
+  [ "$DRY_RUN" = false ] && echo "$TEMPLATE_VERSION" > "$LOCKFILE" && log "🔒 Updated lockfile: $LOCKFILE"
+  verify_compose_files
+  [ "$UPDATE_IMAGES" = true ] && pull_docker_images || log "💡 Skipping docker image update because UPDATE_IMAGES is false."
+  if [ "$DRY_RUN" = false ] && [ "$START_COMPOSE" = true ]; then
+    log "🚀 Starting Docker Compose with merged compose file..."
+    # docker compose -f "$MERGED_COMPOSE" --env-file .env.generated up -d &> /dev/null
+  else
+    log "ℹ️ Setup complete. Run script again to start Docker Compose."
+  fi
+
+  cleanup_cache
+}
+
+main "$@"
