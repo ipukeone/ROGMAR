@@ -42,6 +42,7 @@ fi
 
 # Move the folder to current directory
 mv ".git-tmp/$FOLDER" ./
+mv ".git-tmp/run.sh" ./
 
 # Clean up
 rm -rf .git-tmp

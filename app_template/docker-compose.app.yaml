@@ -1,0 +1,46 @@
+---
+x-required-services:
+  - redis
+  - mariadb
+
+services:
+  app:
+    image: ${IMAGE}
+    container_name: ${TRAEFIK_HOSTNAME}
+    hostname: ${TRAEFIK_HOSTNAME}
+    restart: unless-stopped
+    read_only: true                                                                                                                                             # Makes entire filesystem read-only   
+    cap_drop:
+      - ALL                                                                                                                                                     # Drops all Linux capabilities (reduces privileges)
+    security_opt:
+      - no-new-privileges:true                                                                                                                                  # Prevents processes from gaining more privileges (even via setuid/setgid)
+    # ports:
+    #   - 8443:8443
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.rule=Host(`${TRAEFIK_HOSTNAME}.${TRAEFIK_DOMAIN}`)"                                                       # FQDN
+      - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.middlewares=authentik-proxy@file"                                                                         # Middlewares: Authentik proxy authentication
+      - "traefik.http.services.${TRAEFIK_HOSTNAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT}"                                                                # Port
+    tmpfs:                                                                                                                                                      # Mount volumes to tmpfs (RAM) to make it writeable
+      - /run
+    volumes:
+      - /etc/localtime:/etc/localtime:ro                                                                                                                        # Localtime
+      - /etc/timezone:/etc/timezone:ro                                                                                                                          # Timezone
+      - data:/data:rw                                                                                                                                           # App data
+    environment:
+      Option: Value
+    networks:
+      - frontend
+      - backend
+
+volumes:
+  data:
+    driver: local
+
+networks:
+  frontend:
+    external: true
+    driver: bridge
+  backend:
+    external: true
+    driver: bridge
