@@ -201,7 +201,7 @@ parse_required_services() {
   fi
 }
 
-backup_existing_compose() {
+backup_existing_compose_env() {
   if [[ "$FORCE_UPDATE" = true && -f "$LOCKFILE" ]]; then
     log "🛡️ Backing up existing compose files to $BACKUP_DIR/"
     mkdir -p "$BACKUP_DIR"
@@ -211,20 +211,49 @@ backup_existing_compose() {
         log "  - Backed up $f"
       fi
     done
+    if [[ -f ".env" ]]; then
+      cp ".env" "$BACKUP_DIR/.env.${TEMPLATE_VERSION:0:12}"
+      log "  - Backed up .env"
+    fi
   else
     return
   fi
 
-  # Clean old backups
-  if [ -d "$BACKUP_DIR" ]; then
+  # Function to get the base filename without the version suffix
+  get_basename() {
+    local filename=$(basename "$1")
+    # Remove last extension part (the timestamp/version)
+    echo "${filename%.*}"
+  }
+
+  # Clean old backups by keeping only $MAX_BACKUPS versions per base filename
+  if [[ -d "$BACKUP_DIR" ]]; then
     log "🧹 Cleaning up old backups..."
-    files=( $(ls -1t "$BACKUP_DIR"/* 2>/dev/null) )
-    if [ "${#files[@]}" -gt "$MAX_BACKUPS" ]; then
-      for f in "${files[@]:$MAX_BACKUPS}"; do
-        log "🗑️ Deleting old backup file: $f"
-        rm -f "$f"
-      done
-    fi
+
+    # Gather all backup files
+    mapfile -t files < <(ls -1t "$BACKUP_DIR"/* 2>/dev/null)
+
+    # Group files by their base name without version suffix
+    declare -A groups=()
+    for file in "${files[@]}"; do
+      base=$(get_basename "$file")
+      groups["$base"]=1
+    done
+
+    # For each base group, delete old backups beyond $MAX_BACKUPS
+    for base in "${!groups[@]}"; do
+      # Get all files matching the base prefix
+      mapfile -t matches < <(ls -1tr "$BACKUP_DIR/${base}."* 2>/dev/null)
+
+      # Calculate how many to delete (keep only $MAX_BACKUPS newest)
+      num_to_delete=$((${#matches[@]} - MAX_BACKUPS))
+      if (( num_to_delete > 0 )); then
+        for ((i=0; i<num_to_delete; i++)); do
+          log "🗑️ Deleting old backup file: ${matches[i]}"
+          rm -f "${matches[i]}"
+        done
+      fi
+    done
   fi
 }
 
@@ -270,6 +299,11 @@ merge_env_files() {
   if [[ -f ".env" && ! -f "main.env" ]]; then
     mv .env main.env
     log "ℹ️ Found legacy .env file – renamed to main.env"
+  fi
+
+  if [[ -f "$output_file" && "$FORCE_UPDATE" != true ]]; then
+    log "ℹ️ .env already exists – skipping merge (use --force to override)"
+    return
   fi
 
   process_env_file() {
@@ -431,7 +465,7 @@ main() {
   fetch_templates
   check_template_state
   parse_required_services
-  [ "$DRY_RUN" = false ] && backup_existing_compose || log "💡 Dry-run: Skipping Backing up existing compose files."
+  [ "$DRY_RUN" = false ] && backup_existing_compose_env || log "💡 Dry-run: Skipping Backing up existing compose and .env files."
   copy_templates_and_secrets
   [ "$DRY_RUN" = false ] && merge_env_files || log "💡 Dry-run: Skipping .env creation."
   [ "$DRY_RUN" = false ] && merge_compose_files || log "💡 Dry-run: Skipping $MERGED_COMPOSE generation."
