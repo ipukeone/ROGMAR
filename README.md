@@ -1,29 +1,29 @@
 # Docker Compose Template Sync & Setup Script
 
-This repository contains reusable Docker Compose templates for various services (e.g., Redis, Postgres, MariaDB) and a helper script to sync and set them up in your projects.
+This repository provides reusable Docker Compose templates for common services like Redis, Postgres, and MariaDB, along with a helper script to sync and set them up in your projects effortlessly.
 
 ---
 
 ## Features
 
-- Clone or update templates from this repo in the background
-- Create symlinks for required `docker-compose.*.yaml` files based on a main compose file in your project
-- Merge `.env` files from templates into a single `.env.generated`
-- Copy secrets from templates to your project
-- Use a lockfile to track template version (Git commit hash)
-- Support for `--dry-run` and `--force` modes in the sync script
+- Clone or update templates from this repository in the background  
+- Automatically copy relevant `docker-compose.*.yaml` files for the services you need  
+- Merge `.env` files from templates into one consolidated `.env` file  
+- Copy secret files from templates to your project folder  
+- Use a Git commit hash-based lockfile to track template versions  
+- Supports `--dry-run`, `--force`, and `--update` options in the setup script  
 
 ---
 
-## Usage
+## How to Use
 
-### 1. Download a Single Folder from GitHub Repo (e.g., `Template`)
+### 1. Download a Single Folder from the GitHub Repo
 
-This script downloads **only one specific folder** from the GitHub repository and places it in your current directory, using the same folder name as in the repo. No `.git` folder or other files are included.
+If you want to use just one service template folder (e.g., `app_template`), you can download only that folder without cloning the whole repo.
 
-#### How to use
+#### Steps:
 
-1. Make the script executable:
+1. Make the downloader script executable:
 
 ```bash
 chmod +x get-folder.sh
@@ -32,91 +32,51 @@ chmod +x get-folder.sh
 2. Run the script with the folder name from the repo as the argument:
 
 ```bash
-./get-folder.sh Template
+./get-folder.sh app_template
 ```
-
-This will:
-
-- Clone the repo with minimal data (no full history)  
-- Checkout only the specified folder (`Template`)  
-- Move that folder to your current directory  
-- Remove all temporary files  
-
-#### Script content (`get-folder.sh`)
-
-```bash
-#!/bin/bash
-
-# Folder name in the repo to download
-FOLDER="$1"
-
-# Check if folder name is provided
-if [ -z "$FOLDER" ]; then
-  echo "Usage: $0 <folder-in-repo>"
-  return 0 2>/dev/null || exit 0
-fi
-
-# Check if target folder already exists
-if [ -d "$FOLDER" ]; then
-  echo "[WARN] Folder '$FOLDER' already exists."
-  read -p "Overwrite it? [y/N]: " confirm
-  if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-    echo "[INFO] Aborted."
-    return 0 2>/dev/null || exit 0
-  fi
-  rm -rf "$FOLDER"
-fi
-
-# Temporary directory for sparse checkout
-mkdir -p .git-tmp
-
-# Clone repo quietly
-git clone --quiet --filter=blob:none --no-checkout https://github.com/saervices/Docker.git .git-tmp &>/dev/null
-
-# Enable sparse checkout and set the folder
-git -C .git-tmp sparse-checkout init --cone &>/dev/null
-git -C .git-tmp sparse-checkout set "$FOLDER" &>/dev/null
-
-# Checkout the branch
-git -C .git-tmp checkout main &>/dev/null
-
-# Check if folder exists in the repo
-if [ ! -d ".git-tmp/$FOLDER" ]; then
-  echo "[ERROR] Folder '$FOLDER' not found in repo."
-  rm -rf .git-tmp
-  return 0 2>/dev/null || exit 0
-fi
-
-# Move the folder to current directory
-mv ".git-tmp/$FOLDER" ./
-
-# Clean up
-rm -rf .git-tmp
-
-# Make run.sh executable if present
-if [ -f "$FOLDER/run.sh" ]; then
-  chmod +x "$FOLDER/run.sh"
-  echo "[INFO] Made '$FOLDER/run.sh' executable."
-fi
-
-echo "[INFO] Folder '$FOLDER' downloaded successfully."
-```
+This downloads only the specified folder from the repo, moves it to your current directory, and makes the included `run.sh` executable.
 
 ### 2. Run the setup script:
 
+Change into the downloaded folder and run the setup script:
+
 ```bash
-chmod +x run.sh && ./run.sh
+cd app_template/ && ./run.sh
 ```
 
-- On first run, the script downloads or updates the **templates repo in the background**, creates symlinks for the required services (defined in `docker-compose.main.yaml`), merges `.env` files into `.env.generated`, and copies secrets. It does **not** start Docker Compose yet.
+On the first run, the script will:
 
-- Review and edit `.env.generated` as needed (e.g., update passwords, ports).
+- Download or update the full templates repo in the background  
+- Copy the necessary Docker Compose files based on your app's compose file  
+- Merge `.env` files from the templates into a single `.env`  
+- Copy any secret files into your project folder  
 
-- Run `./run.sh` a second time to start Docker Compose with all services.
+After the setup finishes:
 
-- Use `./run.sh --force` anytime to refresh templates and configs from GitHub.
+- Review and edit the generated `.env` file and secret files (e.g., update passwords or ports)  
+- Start your containers using Docker Compose:
 
-- Use `./run.sh --dry-run` to see what changes would be made without applying them.
+```bash
+docker compose -f docker-compose.main.yaml up -d
+```
+
+If you want to refresh templates and configurations at any time, run:
+
+```bash
+./run.sh --force
+```
+
+To update all used Docker images (pull the latest), run:
+
+```bash
+./run.sh --update
+```
+
+To perform a dry run and see what changes would be made without applying them, run:
+
+```bash
+./run.sh --dry-run
+```
 
 ---
 
