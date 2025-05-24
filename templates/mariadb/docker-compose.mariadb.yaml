@@ -15,7 +15,7 @@ services:
     #######################################################################
     # --- SECURITY SETTINGS
     #######################################################################
-    # user: '1000:1000'                                                                                                                                         # Optional: run as specific non-root user (app user)
+    user: '999:999'                                                                                                                                             # Optional: run as specific non-root user (app user)
     read_only: true                                                                                                                                             # Filesystem is read-only except for mounted volumes
     cap_drop:                                                                                                                                                   # Drop all capabilities by default
       - ALL
