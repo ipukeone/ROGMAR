@@ -4,7 +4,7 @@ services:
     #################################
     # --- CONTAINER BASICS
     #################################
-    image: ${IMAGE:?Image required}
+    image: ${REDIS_IMAGE:?Image required}
     container_name: ${TRAEFIK_HOSTNAME:?Hostname required}-redis
     hostname: ${TRAEFIK_HOSTNAME}-redis
     restart: unless-stopped                                                                                                                                     # Automatically restart unless manually stopped

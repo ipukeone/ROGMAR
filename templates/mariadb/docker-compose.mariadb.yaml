@@ -4,7 +4,7 @@ services:
     #################################
     # --- CONTAINER BASICS
     #################################
-    image: ${IMAGE:?Image required}
+    image: ${MARIADB_IMAGE:?Image required}
     container_name: ${TRAEFIK_HOSTNAME:?Hostname required}-mariadb
     hostname: ${TRAEFIK_HOSTNAME}-mariadb
     restart: unless-stopped                                                                                                                                     # Automatically restart unless manually stopped
