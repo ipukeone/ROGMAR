@@ -8,12 +8,12 @@ services:
     hostname: ${TRAEFIK_HOSTNAME}-redis
     command: ['/bin/sh', '-c', 'redis-server --save 60 1 --loglevel warning --requirepass "$$(cat /run/secrets/${REDIS_PASSWORD_FILENAME})"']
     restart: unless-stopped
-    user: '999:1000'                                                                                                                                            # Redis user in the container
+    user: '999:1000'                                                                                                                                            # App user in the container
     read_only: true                                                                                                                                             # Makes the entire root filesystem of the container read-only except the mounted volumes
     cap_drop:
-      - ALL
+      - ALL                                                                                                                                                     # Drops all Linux capabilities (reduces privileges)
     security_opt:
-      - no-new-privileges:true
+      - no-new-privileges:true                                                                                                                                  # Prevents processes from gaining more privileges (even via setuid/setgid)
     healthcheck:
       test: ['CMD-SHELL', 'redis-cli --pass "$$(cat /run/secrets/${REDIS_PASSWORD_FILENAME})" ping | grep PONG']
       start_period: 10s
