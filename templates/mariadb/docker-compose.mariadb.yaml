@@ -19,8 +19,10 @@ services:
     read_only: true                                                                                                                                             # Filesystem is read-only except for mounted volumes
     cap_drop:                                                                                                                                                   # Drop all capabilities by default
       - ALL
-    # cap_add:                                                                                                                                                  # Add needed capabilities
-    #   - 
+    cap_add:                                                                                                                                                    # Add needed capabilities
+      - CHOWN
+      - SETGID
+      - SETUID
     security_opt:
       - no-new-privileges:true                                                                                                                                  # Prevent privilege escalation
 
@@ -33,6 +35,7 @@ services:
     tmpfs:                                                                                                                                                      # Ephemeral storage in RAM, auto-cleared on restart
       - /run                                                                                                                                                    # Mount /run as tmpfs for runtime files (PID files, sockets, etc.)
       - /tmp                                                                                                                                                    # Mount /tmp as tmpfs for temporary files; faster and auto-cleared on restart
+      - /run/mysqld
 
     #######################################################################
     # --- FILESYSTEM & SECRETS
