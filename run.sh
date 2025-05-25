@@ -4,23 +4,28 @@ trap cleanup_on_exit EXIT
 
 # ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # Usage:
-#   ./run.sh [--dry-run] [--force] [--update]
+#   ./run.sh [--dry-run] [--force] [--update] [--delete] [target-dir]
 #
 # Description:
-#   This script automates the setup of Docker Compose projects using Git-based templates.
-#   It fetches templates from a remote repo, backs up existing compose files,
+#   This script automates the setup and management of Docker Compose projects using Git-based service templates.
+#   It clones or updates the templates repo, backs up existing configuration files,
 #   copies required service compose files and secrets, merges .env files and docker-compose files,
-#   and optionally starts Docker Compose with the merged configuration.
+#   and optionally runs 'docker compose pull' to update images.
+#
+#   By default, it operates in the current directory. You can pass a target directory as the final argument.
 #
 # Options:
-#   --dry-run    Simulate actions without making any changes (no files modified).
-#   --force      Force update of templates and compose files, ignoring the lockfile.
-#   --update     Only update Docker images (skip template merge and file generation).
+#   --dry-run      Show what would be done, but don't change any files.
+#   --force        Force template update and file regeneration, even if the lockfile is up-to-date.
+#   --update       Only pull the latest Docker images – skip file generation and merging steps.
+#   --delete       Remove all Docker volumes created by this project (based on labels), then exit.
 #
-# Example:
-#   ./run.sh --force       # Force refresh templates and regenerate compose files.
-#   ./run.sh --dry-run     # Show what would be done without applying changes.
-#   ./run.sh --update      # Just pull the latest Docker images for merged services.
+# Examples:
+#   ./run.sh --force            # Force refresh templates and regenerate all compose/env files.
+#   ./run.sh --dry-run          # Simulate actions without writing anything.
+#   ./run.sh --update           # Only update images via 'docker compose pull'.
+#   ./run.sh --delete           # Delete all volumes tied to this project and exit.
+#   ./run.sh --force ./my-app   # Run in ./my-app directory with forced template refresh.
 #
 # Created by Særvices © 2025 — https://github.com/saervices
 # ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -29,12 +34,28 @@ trap cleanup_on_exit EXIT
 # Constants
 # ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # ──────────────────────────────────────────────────────────────────────────────
+# Target directory parsing
+# ──────────────────────────────────────────────────────────────────────────────
+TARGET_DIR="."                                                                  # Set the target directory to "." if no target dir is specified
+ARGS=()
+
+for arg in "$@"; do
+  if [[ "$arg" == --* ]]; then
+    ARGS+=("$arg")
+  else
+    TARGET_DIR="$arg"
+  fi
+done
+
+TARGET_DIR=$(realpath "$TARGET_DIR")
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Docker Compose related files and directories
 # ──────────────────────────────────────────────────────────────────────────────
-RUN_DIR="./.run.conf"                                                           # Folder for run.sh
-MAIN_COMPOSE="docker-compose.app.yaml"                                          # Main docker-compose file with service list
-MERGED_COMPOSE="docker-compose.main.yaml"                                       # Final merged docker-compose file generated by script
-SECRETS_DIR="secrets"                                                           # Directory to store secrets from templates
+RUN_DIR="$TARGET_DIR/.run.conf"                                                 # Folder for run.sh
+MAIN_COMPOSE="$TARGET_DIR/docker-compose.app.yaml"                              # Main docker-compose file with service list
+MERGED_COMPOSE="$TARGET_DIR/docker-compose.main.yaml"                           # Final merged docker-compose file generated by script
+SECRETS_DIR="$TARGET_DIR/secrets"                                               # Directory to store secrets from templates
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Git repository and local cache settings
@@ -56,6 +77,7 @@ MAX_BACKUPS=2                                                                   
 DRY_RUN=false                                                                   # If true, script will simulate actions without changing files
 FORCE_UPDATE=false                                                              # Force update of templates and compose files, ignoring lockfile
 UPDATE_IMAGES=false                                                             # if true, script will update all images (docker pull)
+DELETE_VOLUMES=false                                                            # if true, script will delete all related volumes
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Logging settings
@@ -97,6 +119,10 @@ parse_cli_args() {
       --update)
         UPDATE_IMAGES=true
         log "⬆️ Update flag set: Docker images will be pulled."
+        ;;
+      --delete)
+        DELETE_VOLUMES=true
+        log "⬆️ Delete flag set: Docker volumes will be deleted."
         ;;
       *)
         log "❓ Unknown argument: $1"
@@ -261,7 +287,7 @@ copy_templates_and_secrets() {
   [ "$DRY_RUN" = true ] || mkdir -p "$SECRETS_DIR"
 
   for service in $REQUIRES; do
-    compose_file="docker-compose.${service}.yaml"
+    compose_file="$TARGET_DIR/docker-compose.${service}.yaml"
     template_dir="$TEMPLATE_REPO/$service"
     template_compose="$template_dir/docker-compose.$service.yaml"
     template_secrets="$template_dir/secrets"
@@ -290,19 +316,19 @@ copy_templates_and_secrets() {
 }
 
 merge_env_files() {
-  local output_file=".env"
-  local local_env_file="app.env"
+  local output_file="$TARGET_DIR/.env"
+  local local_env_file="$TARGET_DIR/app.env"
   local tmp_file
   tmp_file=$(mktemp)
   declare -A seen_vars=()
 
-  if [[ -f ".env" && ! -f "app.env" ]]; then
-    mv .env app.env
-    log "ℹ️ Found legacy .env file – renamed to app.env"
+  if [[ -f "$output_file" && ! -f "$local_env_file" ]]; then
+    mv "$output_file" "$local_env_file"
+    log "ℹ️ Found legacy $output_file file – renamed to $local_env_file"
   fi
 
   if [[ -f "$output_file" && "$FORCE_UPDATE" != true ]]; then
-    log "ℹ️ .env already exists – skipping merge (use --force to override)"
+    log "ℹ️ $output_file already exists – skipping merge (use --force to override)"
     return
   fi
 
@@ -330,7 +356,7 @@ merge_env_files() {
   done
   mv "$tmp_file" "$output_file"
   rm -rf "$tmp_file"
-  log "✅ Merged .env into $output_file"
+  log "✅ Merged $local_env_file into $output_file"
 }
 
 merge_compose_files() {
@@ -339,7 +365,7 @@ merge_compose_files() {
   TMP_DIR=$(mktemp -d)
   MERGE_INPUTS=()
 
-  for f in docker-compose.*.yaml; do
+  for f in $TARGET_DIR/docker-compose.*.yaml; do
     [[ "$f" == "$MERGED_COMPOSE" ]] && continue
 
     tmpf="$TMP_DIR/$(basename "$f")"
@@ -432,26 +458,55 @@ cleanup_on_exit() {
 pull_docker_images() {
   log "⬇️ Pulling latest Docker images for services from $MERGED_COMPOSE..."
 
-  if [[ -f ".env" ]]; then
-    log "📄 Loading environment variables from .env"
+  local env_file="$TARGET_DIR/.env"
+
+  if [[ -f "$env_file" ]]; then
+    log "📄 Loading environment variables from $env_file"
     set -a
     # shellcheck source=/dev/null
-    source ".env"
+    source "$env_file"
     set +a
   else
-    log "⚠️ Env file .env not found. Cannot resolve image variables."
+    log "⚠️ Env file $env_file not found. Cannot resolve image variables."
     return 1
   fi
 
+  local services
   services=$(yq e '.services | keys | .[]' "$MERGED_COMPOSE")
+
   for svc in $services; do
+    local image_raw image
     image_raw=$(yq e ".services.\"$svc\".image" "$MERGED_COMPOSE")
     image=$(eval echo "$image_raw")
+
     if [[ "$image" != "null" && -n "$image" ]]; then
       log "⬇️ Pulling image for service $svc: $image"
-      docker pull "$image" --quiet >/dev/null 2>&1
+      if docker pull "$image" --quiet >/dev/null 2>&1; then
+        log "✅ Pulled $image successfully"
+      else
+        log "❌ Failed to pull $image"
+      fi
     else
       log "⚠️ No image defined for service $svc, skipping."
+    fi
+  done
+}
+
+delete_docker_volumes() {
+  log "🧹 Deleting Docker volumes defined in $MERGED_COMPOSE..."
+
+  local volumes
+  volumes=$(yq e '.volumes | keys | .[]' "$MERGED_COMPOSE")
+
+  for vol in $volumes; do
+    local full_volume_name="${COMPOSE_PROJECT_NAME}_${vol}"
+    if docker volume inspect "$full_volume_name" >/dev/null 2>&1; then
+      log "🗑️ Removing volume: $full_volume_name"
+      docker volume rm "$full_volume_name" >/dev/null 2>&1 \
+        && log "✅ Removed $full_volume_name" \
+        || log "❌ Failed to remove $full_volume_name"
+    else
+      log "⚠️ Volume $full_volume_name does not exist, skipping."
     fi
   done
 }
@@ -460,7 +515,7 @@ pull_docker_images() {
 # Main
 # ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 main() {
-  parse_cli_args "$@"
+  parse_cli_args "${ARGS[@]}"
   check_install_yq
   fetch_templates
   check_template_state
@@ -472,6 +527,7 @@ main() {
   [ "$DRY_RUN" = false ] && echo "$TEMPLATE_VERSION" > "$LOCKFILE" && log "🔒 Updated lockfile: $LOCKFILE"
   verify_compose_files
   [ "$UPDATE_IMAGES" = true ] && pull_docker_images || log "💡 Skipping docker image update because UPDATE_IMAGES is false."
+  [ "$DELETE_VOLUMES" = true ] && delete_docker_volumes || log "💡 Skipping docker volume deletion because DELETE_VOLUMES is false."
   cleanup_cache
   [ "$DRY_RUN" = false ] && log "ℹ️ Setup complete. Run "$MERGED_COMPOSE" script to start Docker Compose." || log "💡 Dry-run: "$MERGED_COMPOSE" not generated."
 }
