@@ -291,14 +291,14 @@ copy_templates_and_secrets() {
 
 merge_env_files() {
   local output_file=".env"
-  local local_env_file="main.env"
+  local local_env_file="app.env"
   local tmp_file
   tmp_file=$(mktemp)
   declare -A seen_vars=()
 
-  if [[ -f ".env" && ! -f "main.env" ]]; then
-    mv .env main.env
-    log "ℹ️ Found legacy .env file – renamed to main.env"
+  if [[ -f ".env" && ! -f "app.env" ]]; then
+    mv .env app.env
+    log "ℹ️ Found legacy .env file – renamed to app.env"
   fi
 
   if [[ -f "$output_file" && "$FORCE_UPDATE" != true ]]; then
