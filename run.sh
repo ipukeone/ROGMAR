@@ -233,13 +233,13 @@ backup_existing_compose_env() {
     mkdir -p "$BACKUP_DIR"
     for f in $TARGET_DIR/docker-compose.*.yaml; do
       if [[ "$f" != "$MERGED_COMPOSE" && -f "$f" ]]; then
-        cp "$f" "$BACKUP_DIR/${f}.${TEMPLATE_VERSION:0:12}"
+        cp "$f" "$BACKUP_DIR/$(basename "$f").${TEMPLATE_VERSION:0:12}"
         log "  - Backed up $f"
       fi
     done
-    if [[ -f ".env" ]]; then
-      cp ".env" "$BACKUP_DIR/.env.${TEMPLATE_VERSION:0:12}"
-      log "  - Backed up .env"
+    if [[ -f "$TARGET_DIR/.env" ]]; then
+      cp "$TARGET_DIR/.env" "$BACKUP_DIR/$(basename .env).${TEMPLATE_VERSION:0:12}"
+      log "  - Backed up $TARGET_DIR/.env"
     fi
   else
     return
