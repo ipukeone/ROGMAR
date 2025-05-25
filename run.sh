@@ -231,7 +231,7 @@ backup_existing_compose_env() {
   if [[ "$FORCE_UPDATE" = true && -f "$LOCKFILE" ]]; then
     log "🛡️ Backing up existing compose files to $BACKUP_DIR/"
     mkdir -p "$BACKUP_DIR"
-    for f in docker-compose.*.yaml; do
+    for f in $TARGET_DIR/docker-compose.*.yaml; do
       if [[ "$f" != "$MERGED_COMPOSE" && -f "$f" ]]; then
         cp "$f" "$BACKUP_DIR/${f}.${TEMPLATE_VERSION:0:12}"
         log "  - Backed up $f"
@@ -360,7 +360,7 @@ merge_env_files() {
 }
 
 merge_compose_files() {
-  log "🔗 Merging docker-compose files..."
+  log "🔗 Merging $TARGET_DIR/docker-compose files..."
 
   TMP_DIR=$(mktemp -d)
   MERGE_INPUTS=()
@@ -421,9 +421,9 @@ merge_compose_files() {
 }
 
 verify_compose_files() {
-  log "🧪 Verifying docker-compose files..."
+  log "🧪 Verifying $TARGET_DIR/docker-compose files..."
   for service in $REQUIRES; do
-    file="docker-compose.${service}.yaml"
+    file="$TARGET_DIR/docker-compose.${service}.yaml"
     if [ ! -f "$file" ]; then
       if [ "$DRY_RUN" = false ]; then
         log "❌ Missing $file. Re-run with --force."
