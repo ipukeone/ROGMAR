@@ -68,33 +68,33 @@ services:
     # command: ['your', 'default', 'command']                                                                                                                   # Override default container command
     # entrypoint: ['your-entrypoint.sh']                                                                                                                        # Override default container entrypoint
     environment:                                                                                                                                                # Environment variables for container configuration
-      LOG_LEVEL: ${LOG_LEVEL}
-      AUTH: ${AUTH}
-      BUILD: ${BUILD}
-      COMMIT: ${COMMIT}
-      CONFIGS: ${CONFIGS}
-      CONTAINERS: ${CONTAINERS}
-      DISTRIBUTION: ${DISTRIBUTION}
-      EVENTS: ${EVENTS}
-      EXEC: ${EXEC}
-      IMAGES: ${IMAGES}
-      INFO: ${INFO}
-      NETWORKS: ${NETWORKS}
-      NODES: ${NODES}
-      PING: ${PING}
-      PLUGINS: ${PLUGINS}
-      SECRETS: ${SECRETS}
-      SERVICES: ${SERVICES}
-      SESSION: ${SESSION}
-      SWARM: ${SWARM}
-      SYSTEM: ${SYSTEM}
-      TASKS: ${TASKS}
-      VERSION: ${VERSION}
-      POST: ${POST}
-      ALLOW_START: ${ALLOW_START}
-      ALLOW_STOP: ${ALLOW_STOP}
-      ALLOW_RESTARTS: ${ALLOW_RESTARTS}
-      DISABLE_IPV6: ${DISABLE_IPV6}
+      SOCKETPROXY_LOG_LEVEL: ${SOCKETPROXY_LOG_LEVEL}
+      SOCKETPROXY_AUTH: ${SOCKETPROXY_AUTH}
+      SOCKETPROXY_BUILD: ${SOCKETPROXY_BUILD}
+      SOCKETPROXY_COMMIT: ${SOCKETPROXY_COMMIT}
+      SOCKETPROXY_CONFIGS: ${SOCKETPROXY_CONFIGS}
+      SOCKETPROXY_CONTAINERS: ${SOCKETPROXY_CONTAINERS}
+      SOCKETPROXY_DISTRIBUTION: ${SOCKETPROXY_DISTRIBUTION}
+      SOCKETPROXY_EVENTS: ${SOCKETPROXY_EVENTS}
+      SOCKETPROXY_EXEC: ${SOCKETPROXY_EXEC}
+      SOCKETPROXY_IMAGES: ${SOCKETPROXY_IMAGES}
+      SOCKETPROXY_INFO: ${SOCKETPROXY_INFO}
+      SOCKETPROXY_NETWORKS: ${SOCKETPROXY_NETWORKS}
+      SOCKETPROXY_NODES: ${SOCKETPROXY_NODES}
+      SOCKETPROXY_PING: ${SOCKETPROXY_PING}
+      SOCKETPROXY_PLUGINS: ${SOCKETPROXY_PLUGINS}
+      SOCKETPROXY_SECRETS: ${SOCKETPROXY_SECRETS}
+      SOCKETPROXY_SERVICES: ${SOCKETPROXY_SERVICES}
+      SOCKETPROXY_SESSION: ${SOCKETPROXY_SESSION}
+      SOCKETPROXY_SWARM: ${SOCKETPROXY_SWARM}
+      SOCKETPROXY_SYSTEM: ${SOCKETPROXY_SYSTEM}
+      SOCKETPROXY_TASKS: ${SOCKETPROXY_TASKS}
+      SOCKETPROXY_VERSION: ${SOCKETPROXY_VERSION}
+      SOCKETPROXY_POST: ${SOCKETPROXY_POST}
+      SOCKETPROXY_ALLOW_START: ${SOCKETPROXY_ALLOW_START}
+      SOCKETPROXY_ALLOW_STOP: ${SOCKETPROXY_ALLOW_STOP}
+      SOCKETPROXY_ALLOW_RESTARTS: ${SOCKETPROXY_ALLOW_RESTARTS}
+      SOCKETPROXY_DISABLE_IPV6: ${SOCKETPROXY_DISABLE_IPV6}
     logging:                                                                                                                                                    # Configure log driver and limits to control log size and rotation
       driver: "json-file"
       options:

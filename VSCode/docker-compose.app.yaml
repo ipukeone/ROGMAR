@@ -46,6 +46,8 @@ services:
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
       - data:/config:rw                                                                                                                                         # App data volume (adjust as needed)
       - ${LOCAL_PATH:?Local path required}:/compose:rw                                                                                                          # Path to the files I want to edit
+    # secrets:                                                                                                                                                  # Mount the defined secret into the container (usually under /run/secrets/)
+    #   - APP_PASSWORD
 
     #######################################################################
     # --- NETWORKING / REVERSE PROXY
