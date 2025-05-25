@@ -44,7 +44,7 @@ services:
     volumes:                                                                                                                                                    # Mount external storage or host directories into the container for persistent data or config
       - /etc/localtime:/etc/localtime:ro                                                                                                                        # Set container time to host time
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
-      - ./scripts/initdb.sh:/docker-entrypoint-initdb.d:ro                                                                                                      # Optional scripts to initialize the database (*.sh must be executable! - chmod +x)
+      - ./scripts/initdb.sh:/docker-entrypoint-initdb.d/initdb.sh:ro                                                                                            # Optional scripts to initialize the database (*.sh must be executable! - chmod +x)
       - database:/var/lib/postgresql/data:rw                                                                                                                    # App data volume (adjust as needed)
     secrets:                                                                                                                                                    # Mount the defined secret into the container (usually under /run/secrets/)
       - POSTGRES_PASSWORD
