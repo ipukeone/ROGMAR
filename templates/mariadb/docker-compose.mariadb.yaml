@@ -20,9 +20,9 @@ services:
     cap_drop:                                                                                                                                                   # Drop all capabilities by default
       - ALL
     cap_add:                                                                                                                                                    # Add needed capabilities
-      - CHOWN
-      - SETGID
-      - SETUID
+      - SETUID                                                                                                                                                  # Set user ID
+      - SETGID                                                                                                                                                  # Set group ID
+      - CHOWN                                                                                                                                                   # Change file ownership
     security_opt:
       - no-new-privileges:true                                                                                                                                  # Prevent privilege escalation
 
