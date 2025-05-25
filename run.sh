@@ -284,7 +284,6 @@ backup_existing_compose_env() {
 }
 
 copy_templates_and_secrets() {
-  [ "$DRY_RUN" = true ] || mkdir -p "$SECRETS_DIR"
 
   for service in $REQUIRES; do
     compose_file="$TARGET_DIR/docker-compose.${service}.yaml"
@@ -301,6 +300,8 @@ copy_templates_and_secrets() {
 
     if [ -d "$template_secrets" ]; then
       log "🔐 Checking secrets for $service"
+      [ "$DRY_RUN" = true ] || mkdir -p "$SECRETS_DIR"
+
       for file in "$template_secrets"/*; do
         name=$(basename "$file")
         dest="$SECRETS_DIR/$name"
@@ -311,6 +312,31 @@ copy_templates_and_secrets() {
           $DRY_RUN || cp "$file" "$dest"
         fi
       done
+    fi
+  done
+}
+
+copy_scripts() {
+
+  for service in $REQUIRES; do
+    local template_scripts="$TEMPLATE_REPO/$service/scripts"
+    local target_scripts="$TARGET_DIR/scripts"
+
+    if [ -d "$template_scripts" ]; then
+      log "📂 Copying scripts for $service"
+      [ "$DRY_RUN" = true ] || mkdir -p "$target_scripts"
+
+      for script_file in "$template_scripts"/*; do
+        local script_name
+        script_name=$(basename "$script_file")
+        log "➡️ Copying script: $script_name"
+        [ "$DRY_RUN" = true ] || cp -f "$script_file" "$target_scripts/"
+      done
+
+      log "🔧 Setting executable permissions for scripts in $target_scripts"
+      [ "$DRY_RUN" = true ] || chmod +x "$target_scripts"/*
+    else
+      log "ℹ️ No scripts folder for $service"
     fi
   done
 }
@@ -522,6 +548,7 @@ main() {
   parse_required_services
   [ "$DRY_RUN" = false ] && backup_existing_compose_env || log "💡 Dry-run: Skipping Backing up existing compose and .env files."
   copy_templates_and_secrets
+  copy_scripts
   [ "$DRY_RUN" = false ] && merge_env_files || log "💡 Dry-run: Skipping .env creation."
   [ "$DRY_RUN" = false ] && merge_compose_files || log "💡 Dry-run: Skipping $MERGED_COMPOSE generation."
   [ "$DRY_RUN" = false ] && echo "$TEMPLATE_VERSION" > "$LOCKFILE" && log "🔒 Updated lockfile: $LOCKFILE"
