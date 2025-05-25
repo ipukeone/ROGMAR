@@ -42,15 +42,15 @@ fi
 
 # Move the folder to current directory
 mv ".git-tmp/$FOLDER" ./
-mv ".git-tmp/run.sh" ./$FOLDER
+
+# Only move run.sh if it doesn't already exist in the target folder
+if [ ! -f "./run.sh" ] && [ -f ".git-tmp/run.sh" ]; then
+  mv ".git-tmp/run.sh" "./"
+  chmod +x "./run.sh"
+  echo "[INFO] Moved and made './run.sh' executable."
+fi
 
 # Clean up
 rm -rf .git-tmp
-
-# Make run.sh executable if present
-if [ -f "$FOLDER/run.sh" ]; then
-  chmod +x "$FOLDER/run.sh"
-  echo "[INFO] Made '$FOLDER/run.sh' executable."
-fi
 
 echo "[INFO] Folder '$FOLDER' downloaded successfully."
