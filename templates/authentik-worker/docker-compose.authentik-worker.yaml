@@ -40,9 +40,7 @@ services:
     #######################################################################
     # --- FILESYSTEM & SECRETS
     #######################################################################
-    volumes:                                                                                                                                                    # Mount external storage or host directories into the container for persistent data or config
-      <<: *authentik_common_volumes
-      - ./config/certs:/certs:rw                                                                                                                                # App data volume (adjust as needed)
+    volumes: *authentik_common_volumes                                                                                                                          # Mount external storage or host directories into the container for persistent data or config
     secrets: *authentik_common_secrets                                                                                                                          # Mount the defined secret into the container (usually under /run/secrets/)                                                                                                                                                  # Mount the defined secret into the container (usually under /run/secrets/)
 
     #######################################################################
