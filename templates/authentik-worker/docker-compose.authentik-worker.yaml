@@ -1,4 +1,12 @@
 ---
+x-required-anchors:
+  volumes: &authentik_common_volumes
+    - volumes
+  secrets: &authentik_common_secrets
+    - secrets
+  environment: &authentik_common_environment
+    - environment
+
 services:
   authentik-worker:
     #######################################################################
