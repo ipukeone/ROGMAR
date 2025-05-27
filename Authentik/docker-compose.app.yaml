@@ -42,12 +42,12 @@ services:
     #######################################################################
     # --- FILESYSTEM & SECRETS
     #######################################################################
-    volumes:                                                                                                                                                    # Mount external storage or host directories into the container for persistent data or config
+    volumes: &authentik_common_volumes                                                                                                                          # Mount external storage or host directories into the container for persistent data or config
       - /etc/localtime:/etc/localtime:ro                                                                                                                        # Set container time to host time
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
       - ./config/media:/media:rw                                                                                                                                # App data volume (adjust as needed)
       - ./config/custom-templates:/templates:rw                                                                                                                 # App data volume (adjust as needed)
-    secrets:                                                                                                                                                    # Mount the defined secret into the container (usually under /run/secrets/)
+    secrets: &authentik_common_secrets                                                                                                                          # Mount the defined secret into the container (usually under /run/secrets/)
       - POSTGRES_PASSWORD
       - REDIS_PASSWORD
       - AUTHENTIK_SECRET_KEY_PASSWORD
@@ -77,7 +77,7 @@ services:
     #######################################################################
     command: ['server']                                                                                                                                         # Override default container command
     # entrypoint: ['your-entrypoint.sh']                                                                                                                        # Override default container entrypoint
-    environment:                                                                                                                                                # Environment variables for container configuration
+    environment: &authentik_common_environment                                                                                                                  # Environment variables for container configuration
       # PostgreSQL
       AUTHENTIK_POSTGRESQL__HOST: ${TRAEFIK_HOSTNAME}-postgresql
       AUTHENTIK_POSTGRESQL__USER: ${TRAEFIK_HOSTNAME}
@@ -136,13 +136,13 @@ services:
 #   data:
 #     driver: local
 
-secrets:                                                                                                                                                      # Define sensitive data (like passwords, tokens, keys) securely and inject into services at runtime
+secrets:                                                                                                                                                        # Define sensitive data (like passwords, tokens, keys) securely and inject into services at runtime
   POSTGRES_PASSWORD:
-    file: ${POSTGRES_PASSWORD_PATH:?Secret Path required}${POSTGRES_PASSWORD_FILENAME:?Secret Filename required}                                              # Load secret from external file
+    file: ${POSTGRES_PASSWORD_PATH:?Secret Path required}${POSTGRES_PASSWORD_FILENAME:?Secret Filename required}                                                # Load secret from external file
   REDIS_PASSWORD:
-    file: ${REDIS_PASSWORD_PATH:?Secret Path required}${REDIS_PASSWORD_FILENAME:?Secret Filename required}                                                    # Load secret from external file
+    file: ${REDIS_PASSWORD_PATH:?Secret Path required}${REDIS_PASSWORD_FILENAME:?Secret Filename required}                                                      # Load secret from external file
   AUTHENTIK_SECRET_KEY_PASSWORD:
-    file: ${AUTHENTIK_SECRET_KEY_PASSWORD_PATH:?Secret Path required}${AUTHENTIK_SECRET_KEY_PASSWORD_FILENAME:?Secret Filename required}                      # Load secret from external file
+    file: ${AUTHENTIK_SECRET_KEY_PASSWORD_PATH:?Secret Path required}${AUTHENTIK_SECRET_KEY_PASSWORD_FILENAME:?Secret Filename required}                        # Load secret from external file
 
 networks:
   frontend:
