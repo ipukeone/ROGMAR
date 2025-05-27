@@ -1,0 +1,144 @@
+---
+services:
+  authentik-worker:
+    #######################################################################
+    # --- CONTAINER BASICS
+    #######################################################################
+    image: ${IMAGE:?Image required}
+    container_name: ${TRAEFIK_HOSTNAME:?Hostname required}-worker
+    hostname: ${TRAEFIK_HOSTNAME}-worker
+    restart: unless-stopped                                                                                                                                     # Automatically restart unless manually stopped
+    # build:                                                                                                                                                    # Optional: build image from local Dockerfile
+    #   context: .
+    #   dockerfile: Dockerfile
+
+    #######################################################################
+    # --- SECURITY SETTINGS
+    #######################################################################
+    # user: '1000:1000'                                                                                                                                         # Optional: run as specific non-root user (app user)
+    read_only: true                                                                                                                                             # Filesystem is read-only except for mounted volumes
+    cap_drop:                                                                                                                                                   # Drop all capabilities by default
+      - ALL
+    # cap_add:                                                                                                                                                  # Add needed capabilities
+    #   - 
+    security_opt:
+      - no-new-privileges:true                                                                                                                                  # Prevent privilege escalation
+
+    #######################################################################
+    # --- SYSTEM RUNTIME
+    #######################################################################
+    init: true                                                                                                                                                  # PID 1 is tini – handles zombies properly
+    stop_grace_period: 30s                                                                                                                                      # Give app time to shut down gracefully
+    oom_score_adj: -500                                                                                                                                         # Reduce likelihood of getting killed under memory pressure
+    tmpfs:                                                                                                                                                      # Ephemeral storage in RAM, auto-cleared on restart
+      - /run                                                                                                                                                    # Mount /run as tmpfs for runtime files (PID files, sockets, etc.)
+      - /tmp                                                                                                                                                    # Mount /tmp as tmpfs for temporary files; faster and auto-cleared on restart
+
+    #######################################################################
+    # --- FILESYSTEM & SECRETS
+    #######################################################################
+    volumes:                                                                                                                                                    # Mount external storage or host directories into the container for persistent data or config
+      - /etc/localtime:/etc/localtime:ro                                                                                                                        # Set container time to host time
+      - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
+      - ./config/media:/media:rw                                                                                                                                # App data volume (adjust as needed)
+      - ./config/custom-templates:/templates:rw                                                                                                                 # App data volume (adjust as needed)
+    secrets:                                                                                                                                                    # Mount the defined secret into the container (usually under /run/secrets/)
+      - POSTGRES_PASSWORD
+      - REDIS_PASSWORD
+      - AUTHENTIK_SECRET_KEY_PASSWORD
+
+    #######################################################################
+    # --- NETWORKING / REVERSE PROXY
+    #######################################################################
+    # labels:                                                                                                                                                   # Metadata for the container, often used for service discovery or reverse proxy rules (e.g., Traefik)
+    #   - "traefik.enable=true"                                                                                                                                 # Enable Traefik reverse proxy routing for this container
+    #   - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.rule=Host(`${TRAEFIK_HOSTNAME}.${TRAEFIK_DOMAIN:?Domain required}`)"                                    # FQDN
+    #   - "traefik.http.services.${TRAEFIK_HOSTNAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT:?Port required}"                                               # Internal container port
+    #   - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.middlewares=authentik-proxy@file"                                                                       # Optional Middlewares: Authentik proxy authentication
+    # ports:                                                                                                                                                    # Optional: exposed ports
+    #  - "9000:9000"
+    #  - "9443:9443"
+    # expose:                                                                                                                                                   # Optional: expose without publishing
+    #  - "9000:9000"
+    #  - "9443:9443"
+    networks:                                                                                                                                                   # Define which Docker networks the container connects to (controls communication and isolation)
+      - backend
+      # - frontend
+    # extra_hosts:                                                                                                                                              # Optional: manual host entries
+    #   - "host.docker.internal:host-gateway"
+
+    #######################################################################
+    # --- RUNTIME / ENVIRONMENT
+    #######################################################################
+    command: ['worker']                                                                                                                                         # Override default container command
+    # entrypoint: ['your-entrypoint.sh']                                                                                                                        # Override default container entrypoint
+    environment:                                                                                                                                                # Environment variables for container configuration
+      # PostgreSQL
+      AUTHENTIK_POSTGRESQL__HOST: ${TRAEFIK_HOSTNAME}-postgresql
+      AUTHENTIK_POSTGRESQL__USER: ${TRAEFIK_HOSTNAME}
+      AUTHENTIK_POSTGRESQL__NAME: ${TRAEFIK_HOSTNAME}
+      AUTHENTIK_POSTGRESQL__PASSWORD: /run/secrets/POSTGRES_PASSWORD
+      # Redis
+      AUTHENTIK_REDIS__HOST: ${TRAEFIK_NAME}-redis
+      AUTHENTIK_REDIS__PASSWORD: /run/secrets/REDIS_PASSWORD
+      # Authentik
+      AUTHENTIK_ERROR_REPORTING__ENABLED: ${AUTHENTIK_ERROR_REPORTING__ENABLED}
+      AUTHENTIK_SECRET_KEY: /run/secrets/AUTHENTIK_SECRET_KEY_PASSWORD
+      # Authentik Email
+      # AUTHENTIK_EMAIL__HOST: ${AUTHENTIK_EMAIL__HOST}
+      # AUTHENTIK_EMAIL__PORT: ${AUTHENTIK_EMAIL__PORT}
+      # AUTHENTIK_EMAIL__USERNAME: ${AUTHENTIK_EMAIL__USERNAME}
+      # AUTHENTIK_EMAIL__PASSWORD: ${AUTHENTIK_EMAIL__PASSWORD}
+      # AUTHENTIK_EMAIL__USE_TLS: ${AUTHENTIK_EMAIL__USE_TLS}
+      # AUTHENTIK_EMAIL__USE_SSL: ${AUTHENTIK_EMAIL__USE_SSL}
+      # AUTHENTIK_EMAIL__TIMEOUT: ${AUTHENTIK_EMAIL__TIMEOUT}
+      # AUTHENTIK_EMAIL__FROM: ${TRAEFIK_HOSTNAME}@${TRAEFIK_DOMAIN}
+    logging:                                                                                                                                                    # Configure log driver and limits to control log size and rotation
+      driver: "json-file"
+      options:
+        max-size: "10m"                                                                                                                                         # Max log file size before rotation
+        max-file: "3"                                                                                                                                           # Keep up to 3 rotated log files
+    healthcheck:                                                                                                                                                # Periodic container health check to ensure service availability
+      test: ["CMD", "ak", "healthcheck"]                                                                                                                        # Command to test container health
+      interval: 30s                                                                                                                                             # Time between checks
+      timeout: 5s                                                                                                                                               # Time to wait for response
+      retries: 3                                                                                                                                                # Number of retries before marking unhealthy
+      start_period: 10s                                                                                                                                         # Give the container time to initialize before health checks start
+    stdin_open: false                                                                                                                                           # Optional: keep STDIN open
+    tty: false                                                                                                                                                  # Disable terminal allocation; used for non-interactive containers
+
+    #######################################################################
+    # --- DEPENDENCIES
+    #######################################################################
+    depends_on:                                                                                                                                                 # Ensure these services are healthy before starting this one
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+    #######################################################################
+    # --- SYSTEM LIMITS
+    #######################################################################
+    # shm_size: "256m"                                                                                                                                          # Shared memory (default 64M, useful e.g. for Chromium)
+    # ulimits:                                                                                                                                                  # Set system resource limits for the container processes (Increasing nofile limits is useful for apps handling many simultaneous connections or files)
+    #   nofile:                                                                                                                                                 # Controls the max number of open file descriptors (files, sockets, etc.)
+    #     soft: 65535                                                                                                                                           # Soft limit: default max open files a process can have
+    #     hard: 65535                                                                                                                                           # Hard limit: maximum value the soft limit can be raised to by privileged processes
+
+# volumes:
+#   data:
+#     driver: local
+
+secrets:                                                                                                                                                      # Define sensitive data (like passwords, tokens, keys) securely and inject into services at runtime
+  POSTGRES_PASSWORD:
+    file: ${POSTGRES_PASSWORD_PATH:?Secret Path required}${POSTGRES_PASSWORD_FILENAME:?Secret Filename required}                                              # Load secret from external file
+  REDIS_PASSWORD:
+    file: ${REDIS_PASSWORD_PATH:?Secret Path required}${REDIS_PASSWORD_FILENAME:?Secret Filename required}                                                    # Load secret from external file
+  AUTHENTIK_SECRET_KEY_PASSWORD:
+    file: ${AUTHENTIK_SECRET_KEY_PASSWORD_PATH:?Secret Path required}${AUTHENTIK_SECRET_KEY_PASSWORD_FILENAME:?Secret Filename required}                      # Load secret from external file
+
+networks:
+  # frontend:
+  #   external: true
+  backend:
+    external: true
