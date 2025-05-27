@@ -15,12 +15,15 @@ services:
     #######################################################################
     # --- SECURITY SETTINGS
     #######################################################################
-    # user: '1000:1000'                                                                                                                                         # Optional: run as specific non-root user (app user)
+    user: '0:0'                                                                                                                                                 # Optional: run as specific non-root user (app user)
     read_only: true                                                                                                                                             # Filesystem is read-only except for mounted volumes
     cap_drop:                                                                                                                                                   # Drop all capabilities by default
       - ALL
-    # cap_add:                                                                                                                                                  # Add needed capabilities
-    #   - 
+    cap_add:                                                                                                                                                    # Add needed capabilities
+      - SETUID                                                                                                                                                  # Set user ID
+      - SETGID                                                                                                                                                  # Set group ID
+      - CHOWN                                                                                                                                                   # Change file ownership
+      - FOWNER                                                                                                                                                  # Bypass permission checks on files you own
     security_opt:
       - no-new-privileges:true                                                                                                                                  # Prevent privilege escalation
 
