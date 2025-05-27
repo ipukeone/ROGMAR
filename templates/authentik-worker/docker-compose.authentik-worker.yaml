@@ -15,7 +15,7 @@ services:
     #######################################################################
     # --- SECURITY SETTINGS
     #######################################################################
-    user: '0:0'                                                                                                                                                 # Optional: run as specific non-root user (app user)
+    # user: '1000:1000'                                                                                                                                         # Optional: run as specific non-root user (app user)
     read_only: true                                                                                                                                             # Filesystem is read-only except for mounted volumes
     cap_drop:                                                                                                                                                   # Drop all capabilities by default
       - ALL
@@ -42,6 +42,7 @@ services:
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
       - ./config/media:/media:rw                                                                                                                                # App data volume (adjust as needed)
       - ./config/custom-templates:/templates:rw                                                                                                                 # App data volume (adjust as needed)
+      - ./config/certs:/certs:rw                                                                                                                                # App data volume (adjust as needed)
     secrets:                                                                                                                                                    # Mount the defined secret into the container (usually under /run/secrets/)
       - POSTGRES_PASSWORD
       - REDIS_PASSWORD
