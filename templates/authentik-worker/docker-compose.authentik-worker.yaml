@@ -15,7 +15,7 @@ services:
     #######################################################################
     # --- SECURITY SETTINGS
     #######################################################################
-    # user: '1000:1000'                                                                                                                                         # Optional: run as specific non-root user (app user)
+    user: '0:0'                                                                                                                                                 # Optional: run as specific non-root user (app user)
     read_only: true                                                                                                                                             # Filesystem is read-only except for mounted volumes
     cap_drop:                                                                                                                                                   # Drop all capabilities by default
       - ALL
@@ -77,13 +77,13 @@ services:
       AUTHENTIK_POSTGRESQL__HOST: ${TRAEFIK_HOSTNAME}-postgresql
       AUTHENTIK_POSTGRESQL__USER: ${TRAEFIK_HOSTNAME}
       AUTHENTIK_POSTGRESQL__NAME: ${TRAEFIK_HOSTNAME}
-      AUTHENTIK_POSTGRESQL__PASSWORD: /run/secrets/POSTGRES_PASSWORD
+      AUTHENTIK_POSTGRESQL__PASSWORD: file:///run/secrets/POSTGRES_PASSWORD
       # Redis
       AUTHENTIK_REDIS__HOST: ${TRAEFIK_HOSTNAME}-redis
-      AUTHENTIK_REDIS__PASSWORD: /run/secrets/REDIS_PASSWORD
+      AUTHENTIK_REDIS__PASSWORD: file:///run/secrets/REDIS_PASSWORD
       # Authentik
       AUTHENTIK_ERROR_REPORTING__ENABLED: ${AUTHENTIK_ERROR_REPORTING__ENABLED}
-      AUTHENTIK_SECRET_KEY: /run/secrets/AUTHENTIK_SECRET_KEY_PASSWORD
+      AUTHENTIK_SECRET_KEY: file:///run/secrets/AUTHENTIK_SECRET_KEY_PASSWORD
       # Authentik Email
       # AUTHENTIK_EMAIL__HOST: ${AUTHENTIK_EMAIL__HOST}
       # AUTHENTIK_EMAIL__PORT: ${AUTHENTIK_EMAIL__PORT}
