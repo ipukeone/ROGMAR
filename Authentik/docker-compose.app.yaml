@@ -104,7 +104,7 @@ services:
         max-size: "10m"                                                                                                                                         # Max log file size before rotation
         max-file: "3"                                                                                                                                           # Keep up to 3 rotated log files
     healthcheck:                                                                                                                                                # Periodic container health check to ensure service availability
-      test: ["CMD", "curl", "-f", "http://localhost:9000/-/health/ready/"]                                                                                      # Command to test container health
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/-/health/ready/')"]                                  # Command to test container health
       interval: 30s                                                                                                                                             # Time between checks
       timeout: 5s                                                                                                                                               # Time to wait for response
       retries: 3                                                                                                                                                # Number of retries before marking unhealthy
