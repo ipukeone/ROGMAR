@@ -9,6 +9,7 @@ readonly BRANCH="main"
 FOLDER=""
 TMPDIR=""
 DEBUG=false
+DRY_RUN=false
 
 #######################################
 # Color Codes for Logging
@@ -32,7 +33,7 @@ log_debug() { [ "$DEBUG" = true ] && echo -e "${CYAN}[DEBUG]${RESET} $*"; }
 #######################################
 usage() {
   cat <<EOF
-Usage: $0 <folder-in-repo> [--debug]
+Usage: $0 <folder-in-repo> [--debug] [--dry-run]
 
 Downloads a specific folder from the GitHub repo:
   $REPO_URL (branch: $BRANCH)
@@ -40,6 +41,7 @@ Downloads a specific folder from the GitHub repo:
 Arguments:
   folder-in-repo   The folder path inside the repo to download.
   --debug          Enable debug output.
+  --dry-run        Show what would be done without executing.
 
 Notes:
   - The folder name must not be absolute or contain '..' for safety.
@@ -61,6 +63,10 @@ parse_args() {
     case "$1" in
       --debug)
         DEBUG=true
+        shift
+        ;;
+      --dry-run)
+        DRY_RUN=true
         shift
         ;;
       -*)
@@ -87,30 +93,34 @@ parse_args() {
   fi
 
   log_debug "Parsed folder: $FOLDER"
-  log_debug "Debug mode enabled"
+  if [ "$DEBUG" = true ]; then log_debug "Debug mode enabled"; fi
+  if [ "$DRY_RUN" = true ]; then log_debug "Dry-run mode enabled"; fi
 }
 
 #######################################
-# Dependency Check with Install Prompt
+# Dependency Check for git and yq
 #######################################
 check_dependencies() {
+  # git check
   if ! command -v git &>/dev/null; then
     log_warn "git is not installed."
-    read -r -p "Do you want to install git now? [y/N]: " answer
-    if [[ "$answer" =~ ^[Yy]$ ]]; then
+    if [[ "$DRY_RUN" = true ]]; then
+      log_info "Dry-run: skipping git installation prompt."
+      exit 1
+    fi
+    read -r -p "Install git now? [y/N]: " install_git
+    if [[ "$install_git" =~ ^[Yy]$ ]]; then
       if command -v apt-get &>/dev/null; then
-        log_info "Installing git via apt-get..."
         sudo apt-get update && sudo apt-get install -y git
       elif command -v yum &>/dev/null; then
-        log_info "Installing git via yum..."
         sudo yum install -y git
       else
-        log_error "Unsupported package manager. Please install git manually."
+        log_error "No supported package manager found to install git."
         exit 1
       fi
       log_info "git installed successfully."
     else
-      log_error "git is required. Exiting."
+      log_error "git is required. Aborting."
       exit 1
     fi
   else
@@ -129,8 +139,12 @@ confirm_overwrite() {
       log_info "Aborted by user."
       exit 0
     fi
-    rm -rf -- "$FOLDER"
-    log_debug "Removed existing folder '$FOLDER'"
+    if [ "$DRY_RUN" = true ]; then
+      log_info "Dry-run: skipping removal of '$FOLDER'."
+    else
+      rm -rf -- "$FOLDER"
+      log_debug "Removed existing folder '$FOLDER'"
+    fi
   fi
 }
 
@@ -142,38 +156,45 @@ clone_sparse_checkout() {
   trap 'rm -rf -- "$TMPDIR"' EXIT
   log_debug "Created temp dir: $TMPDIR"
 
-  git clone --quiet --filter=blob:none --no-checkout "$REPO_URL" "$TMPDIR" || {
-    log_error "Failed to clone repo."
-    exit 1
-  }
+  if [ "$DRY_RUN" = true ]; then
+    log_info "Dry-run: skipping git clone."
+  else
+    git clone --quiet --filter=blob:none --no-checkout "$REPO_URL" "$TMPDIR" || {
+      log_error "Failed to clone repo."
+      exit 1
+    }
 
-  git -C "$TMPDIR" sparse-checkout init --cone &>/dev/null || {
-    log_error "Sparse checkout init failed."
-    exit 1
-  }
+    git -C "$TMPDIR" sparse-checkout init --cone &>/dev/null || {
+      log_error "Sparse checkout init failed."
+      exit 1
+    }
 
-  git -C "$TMPDIR" sparse-checkout set "$FOLDER" &>/dev/null || {
-    log_error "Sparse checkout set failed."
-    exit 1
-  }
+    git -C "$TMPDIR" sparse-checkout set "$FOLDER" &>/dev/null || {
+      log_error "Sparse checkout set failed."
+      exit 1
+    }
 
-  git -C "$TMPDIR" checkout "$BRANCH" &>/dev/null || {
-    log_error "Git checkout failed."
-    exit 1
-  }
-
-  if [ ! -d "$TMPDIR/$FOLDER" ]; then
-    log_error "Folder '$FOLDER' not found in repo."
-    exit 1
+    git -C "$TMPDIR" checkout "$BRANCH" &>/dev/null || {
+      log_error "Git checkout failed."
+      exit 1
+    }
+    if [ ! -d "$TMPDIR/$FOLDER" ]; then
+      log_warn "Folder '$FOLDER' not found in temp directory."
+    else
+      log_debug "Checked out folder '$FOLDER' successfully."
+    fi
   fi
-
-  log_debug "Checked out folder '$FOLDER' successfully."
 }
 
 #######################################
 # Move Fetched Files to Local Folder
 #######################################
 move_files() {
+  if [ "$DRY_RUN" = true ]; then
+    log_info "Dry-run: skipping moving folder '$FOLDER'."
+    return
+  fi
+
   if [ ! -d "$TMPDIR/$FOLDER" ]; then
     log_error "Folder '$FOLDER' not found in temp directory before moving."
     exit 1
@@ -183,10 +204,12 @@ move_files() {
     log_warn "Folder '$FOLDER' is empty."
   fi
 
-  mv -- "$TMPDIR/$FOLDER" ./ || {
+  if mv -- "$TMPDIR/$FOLDER" ./; then
+    log_info "Folder '$FOLDER' downloaded successfully."
+  else
     log_error "Failed to move folder."
     exit 1
-  }
+  fi
 
   if [ ! -f "./run.sh" ] && [ -f "$TMPDIR/run.sh" ]; then
     mv -- "$TMPDIR/run.sh" "./"
@@ -204,7 +227,6 @@ main() {
   confirm_overwrite
   clone_sparse_checkout
   move_files
-  log_info "Folder '$FOLDER' downloaded successfully."
 }
 
 #######################################
