@@ -8,6 +8,7 @@ readonly REPO_URL="https://github.com/saervices/Docker.git"
 readonly BRANCH="main"
 FOLDER=""
 TMPDIR=""
+DEBUG=false
 
 #######################################
 # Color Codes for Logging
@@ -24,20 +25,21 @@ CYAN='\033[0;36m'
 log_info()  { echo -e "${GREEN}[INFO]${RESET}  $*"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${RESET}  $*" >&2; }
 log_error() { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
-log_debug() { echo -e "${CYAN}[DEBUG]${RESET} $*"; }
+log_debug() { [ "$DEBUG" = true ] && echo -e "${CYAN}[DEBUG]${RESET} $*"; }
 
 #######################################
 # Usage Information
 #######################################
 usage() {
   cat <<EOF
-Usage: $0 <folder-in-repo>
+Usage: $0 <folder-in-repo> [--debug]
 
 Downloads a specific folder from the GitHub repo:
   $REPO_URL (branch: $BRANCH)
 
 Arguments:
   folder-in-repo   The folder path inside the repo to download.
+  --debug          Enable debug output.
 
 Notes:
   - The folder name must not be absolute or contain '..' for safety.
@@ -47,78 +49,73 @@ EOF
 }
 
 #######################################
-# Install git if missing (with prompt)
+# Argument Parsing
 #######################################
-install_git_if_missing() {
-  if command -v git &>/dev/null; then
-    log_debug "git is already installed."
-    return 0
-  fi
-
-  log_warn "'git' not found."
-
-  if [[ $EUID -ne 0 ]]; then
-    log_error "Cannot install 'git' automatically without root privileges."
-    exit 1
-  fi
-
-  read -r -p "Do you want to install 'git' now? [y/N]: " answer
-  if [[ ! "$answer" =~ ^[Yy]$ ]]; then
-    log_error "'git' is required but not installed. Aborting."
-    exit 1
-  fi
-
-  if command -v apt-get &>/dev/null; then
-    log_info "Installing git using apt-get..."
-    apt-get update -qq && apt-get install -y git
-  elif command -v apk &>/dev/null; then
-    log_info "Installing git using apk..."
-    apk add --no-cache git
-  elif command -v dnf &>/dev/null; then
-    log_info "Installing git using dnf..."
-    dnf install -y git
-  elif command -v yum &>/dev/null; then
-    log_info "Installing git using yum..."
-    yum install -y git
-  elif command -v pacman &>/dev/null; then
-    log_info "Installing git using pacman..."
-    pacman -Sy --noconfirm git
-  else
-    log_error "No supported package manager found. Install 'git' manually."
-    exit 1
-  fi
-
-  if ! command -v git &>/dev/null; then
-    log_error "Failed to install 'git'."
-    exit 1
-  fi
-
-  log_info "'git' installed successfully."
-}
-
-#######################################
-# Dependency Check
-#######################################
-check_dependencies() {
-  install_git_if_missing
-}
-
-#######################################
-# Input Validation
-#######################################
-validate_input() {
-  if [ $# -lt 1 ] || [ -z "${1-}" ]; then
+parse_args() {
+  if [ $# -eq 0 ]; then
     usage
     exit 1
   fi
 
-  local input="$1"
-  if [[ "$input" == /* || "$input" == *..* ]]; then
-    log_error "Unsafe folder name: '$input'"
+  while (( $# )); do
+    case "$1" in
+      --debug)
+        DEBUG=true
+        shift
+        ;;
+      -*)
+        log_error "Unknown option: $1"
+        usage
+        exit 1
+        ;;
+      *)
+        if [ -z "$FOLDER" ]; then
+          FOLDER="$1"
+          shift
+        else
+          log_error "Multiple folder arguments are not supported."
+          usage
+          exit 1
+        fi
+        ;;
+    esac
+  done
+
+  if [[ "$FOLDER" == /* || "$FOLDER" == *..* ]]; then
+    log_error "Unsafe folder name: '$FOLDER'"
     exit 1
   fi
 
-  FOLDER="$input"
+  log_debug "Parsed folder: $FOLDER"
+  log_debug "Debug mode enabled"
+}
+
+#######################################
+# Dependency Check with Install Prompt
+#######################################
+check_dependencies() {
+  if ! command -v git &>/dev/null; then
+    log_warn "git is not installed."
+    read -r -p "Do you want to install git now? [y/N]: " answer
+    if [[ "$answer" =~ ^[Yy]$ ]]; then
+      if command -v apt-get &>/dev/null; then
+        log_info "Installing git via apt-get..."
+        sudo apt-get update && sudo apt-get install -y git
+      elif command -v yum &>/dev/null; then
+        log_info "Installing git via yum..."
+        sudo yum install -y git
+      else
+        log_error "Unsupported package manager. Please install git manually."
+        exit 1
+      fi
+      log_info "git installed successfully."
+    else
+      log_error "git is required. Exiting."
+      exit 1
+    fi
+  else
+    log_debug "git is already installed."
+  fi
 }
 
 #######################################
@@ -133,6 +130,7 @@ confirm_overwrite() {
       exit 0
     fi
     rm -rf -- "$FOLDER"
+    log_debug "Removed existing folder '$FOLDER'"
   fi
 }
 
@@ -142,6 +140,7 @@ confirm_overwrite() {
 clone_sparse_checkout() {
   TMPDIR=$(mktemp -d)
   trap 'rm -rf -- "$TMPDIR"' EXIT
+  log_debug "Created temp dir: $TMPDIR"
 
   git clone --quiet --filter=blob:none --no-checkout "$REPO_URL" "$TMPDIR" || {
     log_error "Failed to clone repo."
@@ -167,6 +166,8 @@ clone_sparse_checkout() {
     log_error "Folder '$FOLDER' not found in repo."
     exit 1
   fi
+
+  log_debug "Checked out folder '$FOLDER' successfully."
 }
 
 #######################################
@@ -194,13 +195,12 @@ move_files() {
   fi
 }
 
-
 #######################################
 # Main Function
 #######################################
 main() {
+  parse_args "$@"
   check_dependencies
-  validate_input "$@"
   confirm_overwrite
   clone_sparse_checkout
   move_files
