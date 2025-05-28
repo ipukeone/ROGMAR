@@ -8,8 +8,6 @@ readonly REPO_URL="https://github.com/saervices/Docker.git"
 readonly BRANCH="main"
 FOLDER=""
 TMPDIR=""
-DEBUG=false
-POSITIONAL_ARGS=()
 
 #######################################
 # Color Codes for Logging
@@ -26,23 +24,20 @@ CYAN='\033[0;36m'
 log_info()  { echo -e "${GREEN}[INFO]${RESET}  $*"; }
 log_warn()  { echo -e "${YELLOW}[WARN]${RESET}  $*" >&2; }
 log_error() { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
-log_debug() { $DEBUG && echo -e "${CYAN}[DEBUG]${RESET} $*"; }
+log_debug() { echo -e "${CYAN}[DEBUG]${RESET} $*"; }
 
 #######################################
 # Usage Information
 #######################################
 usage() {
   cat <<EOF
-Usage: $0 [--debug] <folder-in-repo>
+Usage: $0 <folder-in-repo>
 
 Downloads a specific folder from the GitHub repo:
   $REPO_URL (branch: $BRANCH)
 
 Arguments:
   folder-in-repo   The folder path inside the repo to download.
-
-Options:
-  --debug          Enable debug output.
 
 Notes:
   - The folder name must not be absolute or contain '..' for safety.
@@ -52,38 +47,60 @@ EOF
 }
 
 #######################################
-# Dependency Check
+# Install git if missing (with prompt)
 #######################################
-check_dependencies() {
-  if ! command -v git &>/dev/null; then
-    log_error "git is not installed."
+install_git_if_missing() {
+  if command -v git &>/dev/null; then
+    log_debug "git is already installed."
+    return 0
+  fi
+
+  log_warn "'git' not found."
+
+  if [[ $EUID -ne 0 ]]; then
+    log_error "Cannot install 'git' automatically without root privileges."
     exit 1
   fi
+
+  read -r -p "Do you want to install 'git' now? [y/N]: " answer
+  if [[ ! "$answer" =~ ^[Yy]$ ]]; then
+    log_error "'git' is required but not installed. Aborting."
+    exit 1
+  fi
+
+  if command -v apt-get &>/dev/null; then
+    log_info "Installing git using apt-get..."
+    apt-get update -qq && apt-get install -y git
+  elif command -v apk &>/dev/null; then
+    log_info "Installing git using apk..."
+    apk add --no-cache git
+  elif command -v dnf &>/dev/null; then
+    log_info "Installing git using dnf..."
+    dnf install -y git
+  elif command -v yum &>/dev/null; then
+    log_info "Installing git using yum..."
+    yum install -y git
+  elif command -v pacman &>/dev/null; then
+    log_info "Installing git using pacman..."
+    pacman -Sy --noconfirm git
+  else
+    log_error "No supported package manager found. Install 'git' manually."
+    exit 1
+  fi
+
+  if ! command -v git &>/dev/null; then
+    log_error "Failed to install 'git'."
+    exit 1
+  fi
+
+  log_info "'git' installed successfully."
 }
 
 #######################################
-# Parse Command Line Arguments
+# Dependency Check
 #######################################
-parse_args() {
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --debug)
-        DEBUG=true
-        ;;
-      -*)
-        log_error "Unknown option: $1"
-        usage
-        exit 1
-        ;;
-      *)
-        POSITIONAL_ARGS+=("$1")
-        ;;
-    esac
-    shift
-  done
-
-  set -- "${POSITIONAL_ARGS[@]:-}"
-  validate_input "$@"
+check_dependencies() {
+  install_git_if_missing
 }
 
 #######################################
@@ -102,7 +119,6 @@ validate_input() {
   fi
 
   FOLDER="$input"
-  log_debug "FOLDER set to: $FOLDER"
 }
 
 #######################################
@@ -117,7 +133,6 @@ confirm_overwrite() {
       exit 0
     fi
     rm -rf -- "$FOLDER"
-    log_debug "Deleted existing folder '$FOLDER'"
   fi
 }
 
@@ -127,7 +142,6 @@ confirm_overwrite() {
 clone_sparse_checkout() {
   TMPDIR=$(mktemp -d)
   trap 'rm -rf -- "$TMPDIR"' EXIT
-  log_debug "Cloning into temp dir: $TMPDIR"
 
   git clone --quiet --filter=blob:none --no-checkout "$REPO_URL" "$TMPDIR" || {
     log_error "Failed to clone repo."
@@ -153,22 +167,25 @@ clone_sparse_checkout() {
     log_error "Folder '$FOLDER' not found in repo."
     exit 1
   fi
-
-  log_debug "Sparse checkout succeeded: $FOLDER"
 }
 
 #######################################
 # Move Fetched Files to Local Folder
 #######################################
 move_files() {
+  if [ ! -d "$TMPDIR/$FOLDER" ]; then
+    log_error "Folder '$FOLDER' not found in temp directory before moving."
+    exit 1
+  fi
+
+  if [ -z "$(ls -A "$TMPDIR/$FOLDER")" ]; then
+    log_warn "Folder '$FOLDER' is empty."
+  fi
+
   mv -- "$TMPDIR/$FOLDER" ./ || {
     log_error "Failed to move folder."
     exit 1
   }
-
-  if [ -z "$(ls -A "$FOLDER")" ]; then
-    log_warn "Folder '$FOLDER' is empty."
-  fi
 
   if [ ! -f "./run.sh" ] && [ -f "$TMPDIR/run.sh" ]; then
     mv -- "$TMPDIR/run.sh" "./"
@@ -177,12 +194,13 @@ move_files() {
   fi
 }
 
+
 #######################################
 # Main Function
 #######################################
 main() {
   check_dependencies
-  parse_args "$@"
+  validate_input "$@"
   confirm_overwrite
   clone_sparse_checkout
   move_files
