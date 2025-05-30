@@ -99,18 +99,21 @@ setup_logging() {
 # ──────────────────────────────────────────────────────────────────────────────
 usage() {
   cat <<EOF
-Usage: $0 <folder-in-repo> [--debug] [--dry-run]
+Usage: $0 <folder-in-repo> [--debug] [--dry-run] [--force]
 
 Downloads a specific folder from the GitHub repo:
   $REPO_URL (branch: $BRANCH)
 
 Arguments:
-  folder-in-repo   The folder path inside the repo to download. Must be relative and no '..'.
+  folder-in-repo   The folder path inside the repo to download. Must be relative and must not contain '..'.
   --debug          Enable debug output.
-  --dry-run        Show what would be done without executing.
+  --dry-run        Show what would be done without executing actions.
+  --force          Force overwrite of existing 'run.sh' file in script directory.
 
 Notes:
-  - If the target-dir exists locally, you will be asked to confirm overwriting.
+  - If the target directory already exists, you will be asked to confirm overwriting unless --dry-run is used.
+  - If 'run.sh' is part of the downloaded folder and doesn't already exist in the script directory, it will be moved and made executable.
+    Use --force to overwrite it even if it already exists.
 
 EOF
 }
