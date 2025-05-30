@@ -158,11 +158,6 @@ parse_args() {
   DRY_RUN=false
   FORCE=false
 
-  if [[ $# -eq 0 ]]; then
-    usage
-    return 1
-  fi
-
   while (( $# )); do
     case "$1" in
       --debug)
@@ -203,10 +198,10 @@ parse_args() {
 
   if [[ -n "$TARGET_DIR" ]]; then
     TARGET_DIR="${SCRIPT_DIR}/${TARGET_DIR}"
-    log_debug "Repo folder: $REPO_SUBFOLDER"
+    log_debug "Repo folder: $REPO_SUBFOLDER and target directory: $TARGET_DIR"
   # elif [[ -z "$TARGET_DIR" ]]; then
   #   TARGET_DIR="${SCRIPT_DIR}/"
-  #   log_debug "Parsed folder: $TARGET_DIR"
+  #   log_debug "Repo folder: $REPO_SUBFOLDER and target directory: $TARGET_DIR"
   else
     log_error "Repo folder name not specified!"
     usage
