@@ -153,6 +153,7 @@ parse_args() {
   REPO_SUBFOLDER=""
   DEBUG=false
   DRY_RUN=false
+  FORCE=false
 
   if [[ $# -eq 0 ]]; then
     usage
@@ -167,6 +168,10 @@ parse_args() {
         ;;
       --dry-run)
         DRY_RUN=true
+        shift
+        ;;
+      --force)
+        FORCE=true
         shift
         ;;
       -*)
@@ -195,12 +200,12 @@ parse_args() {
 
   if [[ -n "$TARGET_DIR" ]]; then
     TARGET_DIR="${SCRIPT_DIR}/${TARGET_DIR}"
-    log_debug "Parsed folder: $TARGET_DIR"
+    log_debug "Repo folder: $REPO_SUBFOLDER"
   # elif [[ -z "$TARGET_DIR" ]]; then
   #   TARGET_DIR="${SCRIPT_DIR}/"
   #   log_debug "Parsed folder: $TARGET_DIR"
   else
-    log_error "Parsed folder is empty and that´s not supported!"
+    log_error "Repo folder name not specified!"
     usage
     return 1
   fi
@@ -321,7 +326,7 @@ move_files() {
     return 1
   fi
 
-  if [[ ! -f "${SCRIPT_DIR}/run.sh" ]] && [[ -f "$TMPDIR/run.sh" ]]; then
+  if [[ ! -f "${SCRIPT_DIR}/run.sh" ]] && [[ -f "$TMPDIR/run.sh" ]] || [[ "$FORCE" = true ]]; then
     mv -- "$TMPDIR/run.sh" "$SCRIPT_DIR/"
     chmod +x "${SCRIPT_DIR}/run.sh"
     log_info "Moved and made 'run.sh' executable."
