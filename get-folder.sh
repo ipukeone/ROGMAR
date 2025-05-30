@@ -59,7 +59,7 @@ log_debug() {
   local msg="$*"
   if [[ "${DEBUG:-false}" == true ]]; then
     echo -e "${CYAN}[DEBUG]${RESET}  $msg"
-  if [[ -n "${LOGFILE:-}" ]]; then
+    if [[ -n "${LOGFILE:-}" ]]; then
       echo -e "[DEBUG]  $msg" >> "$LOGFILE"
     fi
   fi
@@ -199,9 +199,6 @@ parse_args() {
   if [[ -n "$TARGET_DIR" ]]; then
     TARGET_DIR="${SCRIPT_DIR}/${TARGET_DIR}"
     log_debug "Repo folder: $REPO_SUBFOLDER and target directory: $TARGET_DIR"
-  # elif [[ -z "$TARGET_DIR" ]]; then
-  #   TARGET_DIR="${SCRIPT_DIR}/"
-  #   log_debug "Repo folder: $REPO_SUBFOLDER and target directory: $TARGET_DIR"
   else
     log_error "Repo folder name not specified!"
     usage
@@ -265,37 +262,54 @@ confirm_overwrite() {
 # Clone Repo with Sparse Checkout
 # ───────────────────────────────────────
 clone_sparse_checkout() {
+  #local repo_url="$1"
+  #local branch="${2:-main}"
+  #local repo_subfolder="$3"
+
+  # Ensure required parameters are provided
+  [[ -z "$REPO_URL" || -z "$REPO_SUBFOLDER" ]] && {
+    log_error "Missing REPO_URL or REPO_SUBFOLDER."
+    return 1
+  }
+
   if [[ "$DRY_RUN" = true ]]; then
     log_info "Dry-run: skipping git clone."
+    return 0
+  fi
+
+  TMPDIR=$(mktemp -d)
+  trap 'rm -rf -- "$TMPDIR"' EXIT
+  log_debug "Created temp dir: $TMPDIR"
+
+  git clone --quiet --filter=blob:none --no-checkout "$REPO_URL" "$TMPDIR" || {
+    log_error "Failed to clone repo."
+    return 1
+  }
+
+  if ! git -C "$TMPDIR" ls-tree -d --name-only "$BRANCH":"$REPO_SUBFOLDER" &>/dev/null; then
+    log_error "Folder '$REPO_SUBFOLDER' not found in branch '$BRANCH'."
+    return 1
+  fi
+
+  git -C "$TMPDIR" sparse-checkout init --cone &>/dev/null || {
+    log_error "Sparse checkout init failed."
+    return 1
+  }
+
+  git -C "$TMPDIR" sparse-checkout set "$REPO_SUBFOLDER" &>/dev/null || {
+    log_error "Sparse checkout set failed."
+    return 1
+  }
+
+  git -C "$TMPDIR" checkout "$BRANCH" &>/dev/null || {
+    log_error "Failed to checkout branch '$BRANCH'."
+    return 1
+  }
+
+  if [[ ! -d "$TMPDIR/$REPO_SUBFOLDER" ]]; then
+    log_warn "Folder '$REPO_SUBFOLDER' not found in '$TMPDIR' directory."
   else
-    TMPDIR=$(mktemp -d)
-    trap 'rm -rf -- "$TMPDIR"' EXIT
-    log_debug "Created temp dir: $TMPDIR"
-
-    git clone --quiet --filter=blob:none --no-checkout "$REPO_URL" "$TMPDIR" || {
-      log_error "Failed to clone repo."
-      return 1
-    }
-
-    git -C "$TMPDIR" sparse-checkout init --cone &>/dev/null || {
-      log_error "Sparse checkout init failed."
-      return 1
-    }
-
-    git -C "$TMPDIR" sparse-checkout set "$REPO_SUBFOLDER" &>/dev/null || {
-      log_error "Sparse checkout set failed."
-      return 1
-    }
-
-    git -C "$TMPDIR" checkout "$BRANCH" &>/dev/null || {
-      log_error "Failed to checkout branch '$BRANCH'."
-      return 1
-    }
-    if [[ ! -d "$TMPDIR/$REPO_SUBFOLDER" ]]; then
-      log_warn "Folder '$REPO_SUBFOLDER' not found in temp directory."
-    else
-      log_debug "Checked out folder '$REPO_SUBFOLDER' successfully."
-    fi
+    log_debug "Checked out folder '$REPO_SUBFOLDER' successfully."
   fi
 }
 
@@ -309,7 +323,7 @@ move_files() {
   fi
 
   if [[ ! -d "$TMPDIR/$REPO_SUBFOLDER" ]]; then
-    log_error "Folder '$REPO_SUBFOLDER' not found in temp directory before moving."
+    log_error "Folder '$REPO_SUBFOLDER' not found in '$TMPDIR' directory before moving."
     return 1
   fi
 
