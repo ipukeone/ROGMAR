@@ -22,18 +22,33 @@ RED='\033[0;31m'
 YELLOW='\033[0;33m'
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
+GREY='\033[1;30m'
+MAGENTA='\033[0;35m'
+
+# Function: log_ok
+# ${GREEN}[OK]
+# ───────────────────────────────────────
+log_ok() {
+  local msg="$*"
+  echo -e "${GREEN}[OK]${RESET}    $msg"
+  if [[ -n "${LOGFILE:-}" ]]; then
+    echo -e "[OK]    $msg" >> "$LOGFILE"
+  fi
+}
 
 # Function: log_info
+# ${CYAN}[INFO]
 # ───────────────────────────────────────
 log_info() {
   local msg="$*"
-  echo -e "${GREEN}[INFO]${RESET}  $msg"
+  echo -e "${CYAN}[INFO]${RESET}  $msg"
   if [[ -n "${LOGFILE:-}" ]]; then
     echo -e "[INFO]  $msg" >> "$LOGFILE"
   fi
 }
 
 # Function: log_warn
+# ${YELLOW}[WARN]
 # ───────────────────────────────────────
 log_warn() {
   local msg="$*"
@@ -44,23 +59,25 @@ log_warn() {
 }
 
 # Function: log_error
+# ${RED}[ERROR]
 # ───────────────────────────────────────
 log_error() {
   local msg="$*"
-  echo -e "${RED}[ERROR]${RESET}  $msg" >&2
+  echo -e "${RED}[ERROR]${RESET} $msg" >&2
   if [[ -n "${LOGFILE:-}" ]]; then
-    echo -e "[ERROR]  $msg" >> "$LOGFILE"
+    echo -e "[ERROR] $msg" >> "$LOGFILE"
   fi
 }
 
 # Function: log_debug
+# ${GREY}[DEBUG]
 # ───────────────────────────────────────
 log_debug() {
   local msg="$*"
   if [[ "${DEBUG:-false}" == true ]]; then
-    echo -e "${CYAN}[DEBUG]${RESET}  $msg"
+    echo -e "${GREY}[DEBUG]${RESET} $msg"
     if [[ -n "${LOGFILE:-}" ]]; then
-      echo -e "[DEBUG]  $msg" >> "$LOGFILE"
+      echo -e "[DEBUG] $msg" >> "$LOGFILE"
     fi
   fi
 }
@@ -70,7 +87,7 @@ log_debug() {
 # Keep only the latest $log_retention_count logs
 # ───────────────────────────────────────
 setup_logging() {
-  local log_retention_count=2
+  local log_retention_count="${1:-2}"
 
   # Construct log dir path
   local log_dir="${SCRIPT_DIR}/.${SCRIPT_BASE}.conf/logs"
@@ -80,13 +97,14 @@ setup_logging() {
   ensure_dir_exists "$log_dir"
 
   # Symlink latest.log to current log
-  ln -sf "$(basename "$LOGFILE")" "$log_dir/latest.log"
+  touch "$LOGFILE" && sleep 0.2
+  ln -sf "$LOGFILE" "$log_dir/latest.log"
 
   # Retain only the latest N logs
-  local logs
-  IFS=$'\n' read -r -d '' -a logs < <(
-    find "$log_dir" -maxdepth 1 -type f -name '*.log' -printf "%T@ %p\n" |
-    sort -nr | cut -d' ' -f2- | tail -n +$((log_retention_count + 1)) && printf '\0'
+  local logs  
+  mapfile -t logs < <(
+  find "$log_dir" -maxdepth 1 -type f -name '*.log' -printf "%T@ %p\n" |
+  sort -nr | cut -d' ' -f2- | tail -n +$((log_retention_count + 1))
   )
 
   for old_log in "${logs[@]}"; do
@@ -194,7 +212,7 @@ parse_args() {
   log_debug "Debug mode enabled"
   if [[ "$DRY_RUN" = true ]]; then log_info "Dry-run mode enabled"; fi
 
-  setup_logging
+  setup_logging "2"
 
   if [[ -n "$TARGET_DIR" ]]; then
     TARGET_DIR="${SCRIPT_DIR}/${TARGET_DIR}"
@@ -271,6 +289,11 @@ clone_sparse_checkout() {
     log_error "Missing REPO_URL or REPO_SUBFOLDER."
     return 1
   }
+
+  if [[ "$REPO_SUBFOLDER" == /* || "$REPO_SUBFOLDER" == *".."* ]]; then
+    log_error "Invalid folder path: '$REPO_SUBFOLDER'"
+    return 1
+  fi
 
   if [[ "$DRY_RUN" = true ]]; then
     log_info "Dry-run: skipping git clone."

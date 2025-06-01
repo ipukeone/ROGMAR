@@ -1,419 +1,381 @@
 #!/usr/bin/env bash
-set -e #uo pipefail
-trap cleanup_on_exit EXIT
-
-# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-# Usage:
-#   ./run.sh [--dry-run] [--force] [--update] [--delete] [target-dir]
-#
-# Description:
-#   This script automates the setup and management of Docker Compose projects using Git-based service templates.
-#   It clones or updates the templates repo, backs up existing configuration files,
-#   copies required service compose files and secrets, merges .env files and docker-compose files,
-#   and optionally runs 'docker compose pull' to update images.
-#
-#   By default, it operates in the current directory. You can pass a target directory as the final argument.
-#
-# Options:
-#   --dry-run      Show what would be done, but don't change any files.
-#   --force        Force template update and file regeneration, even if the lockfile is up-to-date.
-#   --update       Only pull the latest Docker images – skip file generation and merging steps.
-#   --delete       Remove all Docker volumes created by this project (based on labels), then exit.
-#
-# Examples:
-#   ./run.sh --force            # Force refresh templates and regenerate all compose/env files.
-#   ./run.sh --dry-run          # Simulate actions without writing anything.
-#   ./run.sh --update           # Only update images via 'docker compose pull'.
-#   ./run.sh --delete           # Delete all volumes tied to this project and exit.
-#   ./run.sh --force ./my-app   # Run in ./my-app directory with forced template refresh.
-#
-# Created by Særvices © 2025 — https://github.com/saervices
-# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-
-# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-# Constants
-# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-# ──────────────────────────────────────────────────────────────────────────────
-# Target directory parsing
-# ──────────────────────────────────────────────────────────────────────────────
-TARGET_DIR="."                                                                  # Set the target directory to "." if no target dir is specified
-ARGS=()
-
-for arg in "$@"; do
-  if [[ "$arg" == --* ]]; then
-    ARGS+=("$arg")
-  else
-    TARGET_DIR="$arg"
-  fi
-done
-
-TARGET_DIR=$(realpath "$TARGET_DIR")
+set -euo pipefail
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Docker Compose related files and directories
+# Constants & Defaults
 # ──────────────────────────────────────────────────────────────────────────────
-RUN_DIR="$TARGET_DIR/.run.conf"                                                 # Folder for run.sh
-MAIN_COMPOSE="$TARGET_DIR/docker-compose.app.yaml"                              # Main docker-compose file with service list
-MERGED_COMPOSE="$TARGET_DIR/docker-compose.main.yaml"                           # Final merged docker-compose file generated by script
-SECRETS_DIR="$TARGET_DIR/secrets"                                               # Directory to store secrets from templates
+# Get the directory of the script itself and the script name without .sh suffix
+readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+readonly SCRIPT_BASE="$(basename "${BASH_SOURCE[0]}" .sh)"
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Git repository and local cache settings
+# Logging Setup & Functions
 # ──────────────────────────────────────────────────────────────────────────────
-GIT_REPO_URL="https://github.com/saervices/Docker"                              # URL to the Docker templates Git repo
-LOCAL_CACHE_DIR=$(mktemp -d)                                                    # Local folder to cache the repo
-TEMPLATE_REPO="$LOCAL_CACHE_DIR/templates"                                      # Path inside cache where templates live
-LOCKFILE="$RUN_DIR/template.lock"                                               # File storing the currently used template commit hash
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Backup settings
-# ──────────────────────────────────────────────────────────────────────────────
-BACKUP_DIR="$RUN_DIR/backup"                                                    # Where old compose files are backed up
-MAX_BACKUPS=2                                                                   # Max number of backup files to keep
+# Color codes for logging
+# ───────────────────────────────────────
+RESET='\033[0m'
+RED='\033[0;31m'
+YELLOW='\033[0;33m'
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+GREY='\033[1;30m'
+MAGENTA='\033[0;35m'
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Script control flags (default values)
-# ──────────────────────────────────────────────────────────────────────────────
-DRY_RUN=false                                                                   # If true, script will simulate actions without changing files
-FORCE_UPDATE=false                                                              # Force update of templates and compose files, ignoring lockfile
-UPDATE_IMAGES=false                                                             # if true, script will update all images (docker pull)
-DELETE_VOLUMES=false                                                            # if true, script will delete all related volumes
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Logging settings
-# ──────────────────────────────────────────────────────────────────────────────
-LOG_DIR="$RUN_DIR/logs"                                                         # Directory to store log files
-TIMESTAMP=$(date +"%Y-%m-%d_%H-%M-%S")                                          # Timestamp string for unique log filenames
-LOG_FILE="$LOG_DIR/run.$TIMESTAMP.log"                                          # Path to the current log file
-LOG_RETENTION_COUNT=2                                                           # Number of log files to keep (old ones will be deleted automatically)
-
-# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-# Logging function: prints to stdout AND appends to log file
-# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-mkdir -p "$LOG_DIR"
-log() {
-  echo "$@" | tee -a "$LOG_FILE"
-
-  local logs=( $(ls -1t "$LOG_DIR"/run.*.log 2>/dev/null) )
-  if [ "${#logs[@]}" -gt "$LOG_RETENTION_COUNT" ]; then
-    for old_log in "${logs[@]:$LOG_RETENTION_COUNT}"; do
-      rm -f "$old_log"
-    done
+# Function: log_ok
+# ${GREEN}[OK]
+# ───────────────────────────────────────
+log_ok() {
+  local msg="$*"
+  echo -e "${GREEN}[OK]${RESET}    $msg"
+  if [[ -n "${LOGFILE:-}" ]]; then
+    echo -e "[OK]    $msg" >> "$LOGFILE"
   fi
 }
 
-# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-# Argument parsing
-# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-parse_cli_args() {
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --dry-run)
-        DRY_RUN=true
-        log "→ Dry-run enabled: No actual changes will be made."
-        ;;
-      --force)
-        FORCE_UPDATE=true
-        log "⚠️  Force update enabled: Templates and compose files will be refreshed."
-        ;;
-      --update)
-        UPDATE_IMAGES=true
-        log "⬆️ Update flag set: Docker images will be pulled."
-        ;;
-      --delete)
-        DELETE_VOLUMES=true
-        log "⬆️ Delete flag set: Docker volumes will be deleted."
-        ;;
-      *)
-        log "❓ Unknown argument: $1"
-        return
-        ;;
-    esac
-    shift
+# Function: log_info
+# ${CYAN}[INFO]
+# ───────────────────────────────────────
+log_info() {
+  local msg="$*"
+  echo -e "${CYAN}[INFO]${RESET}  $msg"
+  if [[ -n "${LOGFILE:-}" ]]; then
+    echo -e "[INFO]  $msg" >> "$LOGFILE"
+  fi
+}
+
+# Function: log_warn
+# ${YELLOW}[WARN]
+# ───────────────────────────────────────
+log_warn() {
+  local msg="$*"
+  echo -e "${YELLOW}[WARN]${RESET}  $msg" >&2
+  if [[ -n "${LOGFILE:-}" ]]; then
+    echo -e "[WARN]  $msg" >> "$LOGFILE"
+  fi
+}
+
+# Function: log_error
+# ${RED}[ERROR]
+# ───────────────────────────────────────
+log_error() {
+  local msg="$*"
+  echo -e "${RED}[ERROR]${RESET} $msg" >&2
+  if [[ -n "${LOGFILE:-}" ]]; then
+    echo -e "[ERROR] $msg" >> "$LOGFILE"
+  fi
+}
+
+# Function: log_debug
+# ${GREY}[DEBUG]
+# ───────────────────────────────────────
+log_debug() {
+  local msg="$*"
+  if [[ "${DEBUG:-false}" == true ]]; then
+    echo -e "${GREY}[DEBUG]${RESET} $msg"
+    if [[ -n "${LOGFILE:-}" ]]; then
+      echo -e "[DEBUG] $msg" >> "$LOGFILE"
+    fi
+  fi
+}
+
+# Function: setup_logging
+# Initializes logging file inside TARGET_DIR
+# Keep only the latest $log_retention_count logs
+# ───────────────────────────────────────
+setup_logging() {
+  local log_retention_count="${1:-2}"
+
+  # Construct log dir path
+  local log_dir="${SCRIPT_DIR}/${TARGET_DIR}/.${SCRIPT_BASE}.conf/logs"
+
+  # Ensure log dir exists and assign logfile
+  LOGFILE="${log_dir}/$(date +%Y%m%d-%H%M%S).log"
+  ensure_dir_exists "$log_dir"
+
+  # Symlink latest.log to current log
+  touch "$LOGFILE" && sleep 0.2
+  ln -sf "$LOGFILE" "$log_dir/latest.log"
+
+  # Retain only the latest N logs
+  local logs  
+  mapfile -t logs < <(
+  find "$log_dir" -maxdepth 1 -type f -name '*.log' -printf "%T@ %p\n" |
+  sort -nr | cut -d' ' -f2- | tail -n +$((log_retention_count + 1))
+  )
+
+  for old_log in "${logs[@]}"; do
+    rm -f "$old_log"
   done
 }
 
-# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-# Prerequisites
-# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-check_install_yq() {
-  if command -v yq &> /dev/null; then return 0; fi
+# ──────────────────────────────────────────────────────────────────────────────
+# Global Function Helpers
+# ──────────────────────────────────────────────────────────────────────────────
 
-  log "❌ 'yq' is required but not installed."
-  read -p "Do you want to install yq now? [Y/n] " answer
-  answer=${answer:-Y}
-  if [[ "$answer" =~ ^[Yy]$ ]]; then
-    log "⬇️ Installing yq..."
-    if [[ "$(uname)" == "Darwin" ]]; then
-      if command -v brew &> /dev/null; then
-        brew install yq
+# Function: usage
+# Displays help and usage information
+# ───────────────────────────────────────
+usage() {
+  echo ""
+  echo "Usage: ./$SCRIPT_BASE.sh <project_folder> [options]"
+  echo ""
+  echo "Options:"
+  echo "  --debug                  Enable debug logging"
+  echo "  --dry-run                Simulate actions without executing"
+  echo "  --force                  Force overwrite of existing files"
+  echo "  --update                 Force update of template repo"
+  echo "  --delete_volumes         Delete associated Docker volumes for the project"
+  echo "  --generate_password [file] [length]"
+  echo "                           Generate a secure password"
+  echo "                           → Optional: file to write into secrets/"
+  echo "                           → Optional: length (default: 32)"
+  echo ""
+  echo "Examples:"
+  echo "  ./$SCRIPT_BASE.sh Authentik --generate_password"
+  echo "  ./$SCRIPT_BASE.sh Authentik --generate_password admin_password.txt"
+  echo "  ./$SCRIPT_BASE.sh Authentik --generate_password admin_password.txt 64"
+  echo ""
+}
+
+# Function: install_dependency
+# Installs a dependency using apt, yum or custom URL
+# ───────────────────────────────────────
+install_dependency() {
+  local name="$1"
+  local url="${2:-}"
+
+  if [[ "$DRY_RUN" == true ]]; then
+    log_info "Dry-run: skipping actual installation of '$name'."
+    return 0
+  fi
+
+  if command -v apt-get &>/dev/null; then
+    sudo apt-get update -qq &>/dev/null && sudo apt-get install -y -qq "$name" &>/dev/null
+  elif command -v yum &>/dev/null; then
+    sudo yum install -y "$name" -q -e 0 &>/dev/null
+  elif [[ -n "$url" ]]; then
+    sudo wget -q -O "/usr/local/bin/$name" "$url"
+    sudo chmod +x "/usr/local/bin/$name"
+  else
+    log_error "No supported package manager and no fallback URL provided for '$name'."
+    return 1
+  fi
+
+  log_info "$name installed successfully."
+}
+
+# Ensure a directory exists (create if missing)
+# Arguments:
+#   $1 - directory path
+# ───────────────────────────────────────
+ensure_dir_exists() {
+  local dir="$1"
+
+  if [[ -z "$dir" ]]; then
+    log_error "ensure_dir_exists() called with empty path"
+    return 1
+  fi
+
+  if [[ ! -d "$dir" ]]; then
+    mkdir -p "$dir" || {
+      log_error "Failed to create directory: $dir"
+      return 1
+    }
+    log_info "Created directory: $dir"
+  else
+    log_debug "Directory already exists: $dir"
+  fi
+}
+
+# Function: copy_file
+# Copy a file to a target location, overwriting if exists.
+# Supports DRY_RUN to simulate the operation.
+# ─────────────────────────────────────────────────────────────
+copy_file() {
+  local src_file="$1"
+  local dest_file="$2"
+
+  if [[ -z "$src_file" || -z "$dest_file" ]]; then
+    log_error "Missing arguments: src_file, dest_file"
+    return 1
+  fi
+
+  if [[ ! -f "$src_file" ]]; then
+    log_error "Source file '$src_file' does not exist"
+    return 1
+  fi
+
+  if [[ "$DRY_RUN" == true ]]; then
+    log_info "Dry-run: would copy '$src_file' to '$dest_file'"
+    return 0
+  fi
+
+  if cp -- "$src_file" "$dest_file"; then
+    log_info "Copied file: '$src_file' → '$dest_file'"
+  else
+    log_error "Failed to copy file '$src_file' to '$dest_file'"
+    return 1
+  fi
+}
+
+# Function: merge_subfolders_from
+# Copy all subfolders from a matched source folder into a destination folder.
+# Existing folders will be merged (new files added, nothing overwritten).
+# Supports DRY_RUN to simulate the operation.
+# ───────────────────────────────────────────────────────────────────────
+merge_subfolders_from() {
+  local src_root="$1"
+  local match_name="$2"
+  local dest_root="$3"
+
+  # check all required params
+  if [[ -z "$src_root" || -z "$match_name" || -z "$dest_root" ]]; then
+    log_error "Missing arguments: src_root, match_name, dest_root"
+    return 1
+  fi
+
+  local matched_path="$src_root/$match_name"
+
+  if [[ ! -d "$matched_path" ]]; then
+    log_error "Source folder '$matched_path' not found"
+    return 1
+  fi
+
+  ensure_dir_exists "$dest_root"
+
+  for subdir in "$matched_path"/*/; do
+    [[ -d "$subdir" ]] || continue
+    local name
+    name="$(basename "$subdir")"
+    local target="$dest_root/$name"
+    ensure_dir_exists "$target"
+
+    if [[ "$DRY_RUN" == true ]]; then
+      log_info "Dry-run: would merge contents of '$subdir' into '$target' (no overwrite)"
+    else
+      # Copy contents of $subdir into $target (no overwrite)
+      rsync -a --ignore-existing "${subdir%/}/" "$target/"
+      if [[ $? -ne 0 ]]; then
+        log_error "rsync failed copying from '$subdir' to '$target'"
+        return 1
+      fi
+      log_info "Merged contents of '$subdir' into '$target' (no overwrite)"
+    fi
+  done
+
+  return 0
+}
+
+# Function: setup_cleanup_trap
+# Register EXIT trap to clean up temporary folder
+# ────────────────────────────────────────────────
+setup_cleanup_trap() {
+  trap '[[ -d "$TMPDIR" ]] && rm -rf -- "$TMPDIR"' EXIT
+  log_debug "Removed tmp directory: $TMPDIR"
+}
+
+# Function: process_merge_file
+# Merges a key=value file into a target file without overwriting existing keys.
+# Supports dry-run mode and comment/blank-line preservation.
+# ────────────────────────────────────────────────
+process_merge_file() {
+  local file="$1"
+  local output_file="$2"
+  local -n seen_vars_ref="$3"
+
+  if [[ -z "$3" ]]; then
+    log_error "Third argument (reference name) missing."
+    return 1
+  fi
+
+  if ! declare -p "$3" 2>/dev/null | grep -q 'declare -A'; then
+    log_error "Variable '$3' is not declared as associative array."
+    return 1
+  fi
+
+  if [[ -z "$file" || -z "$output_file" ]]; then
+    log_error "Missing arguments: file, output_file, seen_vars_ref"
+    return 1
+  fi
+
+  if [[ ! -f "$file" ]]; then
+    log_warn "File '$file' not found, skipping."
+    return 0
+  fi
+
+  local source_name
+  source_name="$(basename "$file")"
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Preserve comments and blank lines
+    if [[ "$line" =~ ^#.*$ || -z "$line" ]]; then
+      if [[ "$DRY_RUN" == true ]]; then
+        log_info "Would preserve comment/blank: $line"
       else
-        log "Homebrew not found. Install yq manually: https://github.com/mikefarah/yq/releases"
-        exit 1
+        echo "$line" >> "$output_file"
       fi
-    elif [[ "$(uname)" == "Linux" ]]; then
-      sudo curl -L "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64" -o /usr/local/bin/yq
-      sudo chmod +x /usr/local/bin/yq
-    else
-      log "Unsupported OS. Install manually: https://github.com/mikefarah/yq/releases"
-      exit 1
+      continue
     fi
-    command -v yq &> /dev/null || { log "❌ yq install failed."; exit 1; }
-    log "✅ yq installed."
-  else
-    log "❌ yq is required. Aborting."
-    exit 1
-  fi
-}
 
-# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-# Template repo management
-# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-fetch_templates() {
-  log "🌐 Checking for template updates from $GIT_REPO_URL..."
-
-  if [ -d "$LOCAL_CACHE_DIR/.git" ]; then
-    log "🔄 Updating sparse-checkout of templates..."
-    if [ "$FORCE_UPDATE" = true ]; then
-      $DRY_RUN || git -C "$LOCAL_CACHE_DIR" pull --quiet &> /dev/null
-    else
-      log "💤 Skipping update – use --force to refresh templates."
-    fi
-  else
-    log "📥 Cloning template repository (only 'templates/')..."
-    $DRY_RUN || git init --initial-branch=main "$LOCAL_CACHE_DIR" &> /dev/null
-    $DRY_RUN || git -C "$LOCAL_CACHE_DIR" remote add origin "$GIT_REPO_URL" &> /dev/null
-    $DRY_RUN || git -C "$LOCAL_CACHE_DIR" config core.sparseCheckout true &> /dev/null
-    $DRY_RUN || echo "templates/" > "$LOCAL_CACHE_DIR/.git/info/sparse-checkout"
-    DEFAULT_BRANCH=$(git ls-remote --symref "$GIT_REPO_URL" HEAD 2>/dev/null | grep 'ref:' | awk '{print $2}' | sed 's@refs/heads/@@')
-    $DRY_RUN || git -C "$LOCAL_CACHE_DIR" pull --depth=1 origin "$DEFAULT_BRANCH" &> /dev/null
-  fi
-
-  TEMPLATE_VERSION=$(git -C "$LOCAL_CACHE_DIR" rev-parse HEAD 2>/dev/null || echo "")
-  log "📌 Using template version: $TEMPLATE_VERSION"
-}
-
-check_template_state() {
-  if [[ "$DRY_RUN" = true ]]; then
-    log "💡 Dry-run: Skipping lockfile checks."
-    return
-  fi
-
-  if [[ -f "$LOCKFILE" && "$FORCE_UPDATE" = false ]]; then
-    CURRENT_LOCK=$(cat "$LOCKFILE")
-    if [[ "$CURRENT_LOCK" == "$TEMPLATE_VERSION" ]]; then
-      log "✅ Templates already up-to-date (lockfile: $LOCKFILE)"
-    else
-      log "ℹ️  Template updates available. Run with --force to apply."
-      return
-    fi
-  fi
-}
-
-# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-# Compose files + secrets
-# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-parse_required_services() {
-  log "🔍 Parsing $MAIN_COMPOSE for required services..."
-  REQUIRES=$(yq '.x-required-services[]' "$MAIN_COMPOSE" 2> /dev/null | sort -u)
-  if [ -z "$REQUIRES" ]; then
-    log "⚠️  No services found in x-required-services."
-    [ "$DRY_RUN" = true ] || return
-  else
-    log "✅ Found required services:"
-    while IFS= read -r service; do
-      log "   • $service"
-    done <<< "$REQUIRES"
-  fi
-}
-
-backup_existing_compose_env() {
-  if [[ "$FORCE_UPDATE" = true && -f "$LOCKFILE" ]]; then
-    log "🛡️ Backing up existing compose files to $BACKUP_DIR/"
-    mkdir -p "$BACKUP_DIR"
-    for f in $TARGET_DIR/docker-compose.*.yaml; do
-      if [[ "$f" != "$MERGED_COMPOSE" && -f "$f" ]]; then
-        cp "$f" "$BACKUP_DIR/$(basename "$f").${TEMPLATE_VERSION:0:12}"
-        log "  - Backed up $f"
+    local key="${line%%=*}"
+    if [[ -z "$key" ]]; then
+      if [[ "$DRY_RUN" == true ]]; then
+        log_info "Would preserve malformed line: $line"
+      else
+        echo "$line" >> "$output_file"
       fi
-    done
-    if [[ -f "$TARGET_DIR/.env" ]]; then
-      cp "$TARGET_DIR/.env" "$BACKUP_DIR/$(basename .env).${TEMPLATE_VERSION:0:12}"
-      log "  - Backed up $TARGET_DIR/.env"
+      continue
     fi
-  else
-    return
-  fi
 
-  # Function to get the base filename without the version suffix
-  get_basename() {
-    local filename=$(basename "$1")
-    # Remove last extension part (the timestamp/version)
-    echo "${filename%.*}"
+    if [[ -n "$key" && -n "${seen_vars_ref[$key]:-}" ]]; then
+      log_warn "Duplicate variable '$key' found in $source_name (already from ${seen_vars_ref[$key]}), skipping."
+    else
+      seen_vars_ref["$key"]="$source_name"
+      line="$(echo "$line" | sed -E 's/^[[:space:]]*([^=[:space:]]+)[[:space:]]*=[[:space:]]*(.*)$/\1=\2/')"
+
+      if [[ "$DRY_RUN" == true ]]; then
+        log_info "Would add: $line"
+      else
+        echo "$line" >> "$output_file"
+      fi
+    fi
+  done < "$file"
+
+  if [[ "$DRY_RUN" != true ]]; then
+    echo "" >> "$output_file"  # blank line for clarity
+    log_info "Merged $file into $output_file"
+  fi
+}
+
+# Function: process_merge_yaml_file
+# Merges a single docker-compose YAML file into a target YAML file using yq.
+# Applies key-by-key merging logic with override behavior.
+# Preserves structure and formatting, skipping x-required-services and comments.
+# Supports dry-run mode.
+# ────────────────────────────────────────────────
+process_merge_yaml_file() {
+  local source_file="$1"
+  local target_file="$2"
+
+  [[ ! -f "$source_file" ]] && {
+    log_error "Source compose file not found: $source_file"
+    return 1
   }
 
-  # Clean old backups by keeping only $MAX_BACKUPS versions per base filename
-  if [[ -d "$BACKUP_DIR" ]]; then
-    log "🧹 Cleaning up old backups..."
+  local tmp_src="${TMPDIR}/process_merge_yaml_file_src_$$.yaml"
+  local tmp_tgt="${TMPDIR}/process_merge_yaml_file_tgt_$$.yaml"
 
-    # Gather all backup files
-    mapfile -t files < <(ls -1t "$BACKUP_DIR"/* 2>/dev/null)
+  # Clean files: strip x-required-services, comments, ---
+  yq 'del(.["x-required-services"])' "$source_file" | sed '/^---$/d' | sed 's/\s*#.*$//' > "$tmp_src"
 
-    # Group files by their base name without version suffix
-    declare -A groups=()
-    for file in "${files[@]}"; do
-      base=$(get_basename "$file")
-      groups["$base"]=1
-    done
-
-    # For each base group, delete old backups beyond $MAX_BACKUPS
-    for base in "${!groups[@]}"; do
-      # Get all files matching the base prefix
-      mapfile -t matches < <(ls -1tr "$BACKUP_DIR/${base}."* 2>/dev/null)
-
-      # Calculate how many to delete (keep only $MAX_BACKUPS newest)
-      num_to_delete=$((${#matches[@]} - MAX_BACKUPS))
-      if (( num_to_delete > 0 )); then
-        for ((i=0; i<num_to_delete; i++)); do
-          log "🗑️ Deleting old backup file: ${matches[i]}"
-          rm -f "${matches[i]}"
-        done
-      fi
-    done
-  fi
-}
-
-copy_templates_and_secrets() {
-
-  for service in $REQUIRES; do
-    compose_file="$TARGET_DIR/docker-compose.${service}.yaml"
-    template_dir="$TEMPLATE_REPO/$service"
-    template_compose="$template_dir/docker-compose.$service.yaml"
-    template_secrets="$template_dir/secrets"
-
-    if [ ! -f "$compose_file" ] || [ "$FORCE_UPDATE" = true ]; then
-      log "📋 Copying compose file: $compose_file"
-      $DRY_RUN || cp -f "$template_compose" "$compose_file"
-    else
-      log "✅ Compose file exists: $compose_file"
-    fi
-
-    if [ -d "$template_secrets" ]; then
-      log "🔐 Checking secrets for $service"
-      [ "$DRY_RUN" = true ] || mkdir -p "$SECRETS_DIR"
-
-      for file in "$template_secrets"/*; do
-        name=$(basename "$file")
-        dest="$SECRETS_DIR/$name"
-        if [ -f "$dest" ]; then
-          log "🔒 Secret '$name' exists – skipping"
-        else
-          log "➕ Copying new secret: $name"
-          $DRY_RUN || cp "$file" "$dest"
-        fi
-      done
-    fi
-  done
-}
-
-copy_scripts() {
-
-  for service in $REQUIRES; do
-    local template_scripts="$TEMPLATE_REPO/$service/scripts"
-    local target_scripts="$TARGET_DIR/scripts"
-
-    if [ -d "$template_scripts" ]; then
-      log "📂 Copying scripts for $service"
-      [ "$DRY_RUN" = true ] || mkdir -p "$target_scripts"
-
-      for script_file in "$template_scripts"/*; do
-        local script_name
-        script_name=$(basename "$script_file")
-        log "➡️ Copying script: $script_name"
-        [ "$DRY_RUN" = true ] || cp -f "$script_file" "$target_scripts/"
-      done
-
-      log "🔧 Setting executable permissions for scripts in $target_scripts"
-      [ "$DRY_RUN" = true ] || chmod +x "$target_scripts"/*
-    else
-      log "ℹ️ No scripts folder for $service"
-    fi
-  done
-}
-
-merge_env_files() {
-  local output_file="$TARGET_DIR/.env"
-  local local_env_file="$TARGET_DIR/app.env"
-  local tmp_file
-  tmp_file=$(mktemp)
-  declare -A seen_vars=()
-
-  if [[ -f "$output_file" && ! -f "$local_env_file" ]]; then
-    mv "$output_file" "$local_env_file"
-    log "ℹ️ Found legacy $output_file file – renamed to $local_env_file"
+  if [[ -f "$target_file" ]]; then
+    yq '.' "$target_file" | sed '/^---$/d' | sed 's/\s*#.*$//' > "$tmp_tgt"
+  else
+    : > "$tmp_tgt"
   fi
 
-  if [[ -f "$output_file" && "$FORCE_UPDATE" != true ]]; then
-    log "ℹ️ $output_file already exists – skipping merge (use --force to override)"
-    return
-  fi
-
-  process_env_file() {
-    local file=$1 source_name=$2
-    while IFS= read -r line || [ -n "$line" ]; do
-      [[ "$line" =~ ^#.*$ || -z "$line" ]] && echo "$line" >> "$tmp_file" && continue
-      local key="${line%%=*}"
-      [[ -z "$key" ]] && echo "$line" >> "$tmp_file" && continue
-      if [[ -n "${seen_vars[$key]}" ]]; then
-        log "⚠️ Duplicate variable '$key' found in $source_name (already from ${seen_vars[$key]}), skipping."
-      else
-        seen_vars["$key"]=$source_name
-        line="$(echo "$line" | sed -E 's/^[[:space:]]*([^=[:space:]]+)[[:space:]]*=[[:space:]]*(.*)$/\1=\2/')"
-        echo "$line" >> "$tmp_file"
-      fi
-    done < "$file"
-    echo "" >> "$tmp_file"
-  }
-
-  > "$tmp_file"
-  [[ -f "$local_env_file" ]] && process_env_file "$local_env_file" "local $local_env_file"
-  for service in $REQUIRES; do
-    [[ -f "$TEMPLATE_REPO/$service/.env" ]] && process_env_file "$TEMPLATE_REPO/$service/.env" "template $service"
-  done
-  mv "$tmp_file" "$output_file"
-  rm -rf "$tmp_file"
-  log "✅ Merged $local_env_file into $output_file"
-}
-
-merge_compose_files() {
-  log "🔗 Merging $TARGET_DIR/docker-compose files..."
-
-  TMP_DIR=$(mktemp -d)
-  MERGE_INPUTS=()
-
-  for f in $TARGET_DIR/docker-compose.*.yaml; do
-    [[ "$f" == "$MERGED_COMPOSE" ]] && continue
-
-    tmpf="$TMP_DIR/$(basename "$f")"
-
-    # Clean file: remove x-required-services, comments, and ---
-    yq 'del(.["x-required-services"])' "$f" | sed '/^---$/d' | sed 's/\s*#.*$//' > "$tmpf"
-
-    # Get list of services
-    services=$(yq e '.services | keys | .[]' "$tmpf")
-
-    # # For each service, add env_file if missing
-    # for svc in $services; do
-    #   # Check if env_file exists for service
-    #   has_env=$(yq e ".services.\"$svc\".env_file" "$tmpf")
-
-    #   if [ "$has_env" == "null" ]; then
-    #     yq e -i ".services.\"$svc\".env_file = [\".env\"]" "$tmpf"
-    #   fi
-    # done
-
-    MERGE_INPUTS+=("$tmpf")
-  done
+  MERGE_INPUTS=("$tmp_tgt" "$tmp_src")
 
   merge_key() {
     local key="$1"
@@ -427,136 +389,634 @@ merge_compose_files() {
   secrets=$(merge_key secrets)
   networks=$(merge_key networks)
 
-  {
-    echo "---"
-    echo "services:"
-    echo "$services" | yq eval '.' - | sed 's/^/  /'
-    echo ""
-    echo "volumes:"
-    echo "$volumes" | yq eval '.' - | sed 's/^/  /'
-    echo ""
-    echo "secrets:"
-    echo "$secrets" | yq eval '.' - | sed 's/^/  /'
-    echo ""
-    echo "networks:"
-    echo "$networks" | yq eval '.' - | sed 's/^/  /'
-  } > "$MERGED_COMPOSE"
-
-  rm -rf "$TMP_DIR"
-  log "✅ Created merged compose file: $MERGED_COMPOSE"
+  if [[ "${DRY_RUN:-false}" == true ]]; then
+    log_info "Dry-run: skipping write of merged compose file $target_file"
+  else
+    {
+      echo "---"
+      echo "services:"
+      echo "$services" | yq eval '.' - | sed 's/^/  /'
+      echo ""
+      echo "volumes:"
+      echo "$volumes" | yq eval '.' - | sed 's/^/  /'
+      echo ""
+      echo "secrets:"
+      echo "$secrets" | yq eval '.' - | sed 's/^/  /'
+      echo ""
+      echo "networks:"
+      echo "$networks" | yq eval '.' - | sed 's/^/  /'
+    } > "$target_file"
+    log_info "Merged $source_file into $target_file"
+  fi
 }
 
-verify_compose_files() {
-  log "🧪 Verifying $TARGET_DIR/docker-compose files..."
-  for service in $REQUIRES; do
-    file="$TARGET_DIR/docker-compose.${service}.yaml"
-    if [ ! -f "$file" ]; then
-      if [ "$DRY_RUN" = false ]; then
-        log "❌ Missing $file. Re-run with --force."
-        return
+# Function: backup_existing_file
+# Backup a single source file into the target directory.
+# The backup filename is source filename + timestamp suffix.
+# Keeps only a limited number of backups (default 2).
+# Supports DRY_RUN and logs all actions.
+# ─────────────────────────────────────────────────────────────
+backup_existing_file() {
+  local src_file="$1"
+  local target_dir="$2"
+  local max_backups="${3:-2}"
+
+  # Return immediately if source file does not exist
+  if [[ ! -f "$src_file" ]]; then
+    return 0
+  fi
+
+  # Ensure target directory exists
+  ensure_dir_exists "$target_dir"
+
+  # Extract base filename from source file path
+  local base_filename
+  base_filename=$(basename -- "$src_file")
+
+  # Create backup filename with timestamp suffix
+  local timestamp
+  timestamp=$(date -u +%Y%m%d%H%M%S)
+  local backup_file="${target_dir}/${base_filename}.${timestamp}"
+
+  # Copy source file to backup file using copy_file function
+  if ! copy_file "$src_file" "$backup_file"; then
+    log_error "Backup failed: could not copy $src_file to $backup_file"
+    return 1
+  fi
+  log_info "Backed up $src_file to $backup_file"
+
+  # Cleanup old backups, keep only $max_backups newest files for this base filename
+  mapfile -t backups < <(ls -1tr "${target_dir}/${base_filename}."* 2>/dev/null)
+
+  local num_to_delete=$(( ${#backups[@]} - max_backups ))
+  if (( num_to_delete > 0 )); then
+    for ((i=0; i<num_to_delete; i++)); do
+      log_info "Deleting old backup file: ${backups[i]}"
+      if [[ "$DRY_RUN" == true ]]; then
+        log_info "Dry-run: would delete '${backups[i]}'"
       else
-        log "⚠️  Dry-run: Would be missing $file."
+        rm -f -- "${backups[i]}"
+      fi
+    done
+  fi
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Main Function
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Function: parse_args
+# Parses command-line arguments, sets globals and logging
+# ───────────────────────────────────────
+parse_args() {
+  TMPDIR=""
+  TARGET_DIR=""
+  INITIAL_RUN=false
+  DEBUG=false
+  DRY_RUN=false
+  FORCE=false
+  UPDATE=false
+  DELETE_VOLUMES=false
+  GENERATE_PASSWORD=false
+  GP_LEN=""
+  GP_FILE=""
+
+  while (( $# )); do
+    case "$1" in
+      --debug)
+        DEBUG=true
+        shift
+        ;;
+      --dry-run)
+        DRY_RUN=true
+        shift
+        ;;
+      --force)
+        FORCE=true
+        shift
+        ;;
+      --update)
+        UPDATE=true
+        shift
+        ;;
+      --delete_volumes)
+        DELETE_VOLUMES=true
+        shift
+        ;;
+      --generate_password)
+        GENERATE_PASSWORD=true
+        shift
+        # Parse optional args for --generate_password
+        for _ in 1 2; do
+          if [[ $# -eq 0 ]]; then break; fi
+          if [[ "${1:-}" == --* ]]; then break; fi
+          if [[ "$1" =~ ^[0-9]+$ ]]; then
+            GP_LEN="$1"
+          else
+            GP_FILE="$1"
+          fi
+          shift
+        done
+        ;;
+      -*)
+        log_error "Unknown option: $1"
+        usage
+        exit 1
+        ;;
+      *)
+        if [[ -z "${TARGET_DIR:-}" ]]; then
+          TARGET_DIR="${1%/}"
+          shift
+          if [[ "$TARGET_DIR" == */ || \
+                "$TARGET_DIR" == /* || \
+                "$TARGET_DIR" == *".."* || \
+                "$TARGET_DIR" =~ //|\\ ]]; then
+            log_error "Invalid target directory: '$TARGET_DIR'"
+            log_error "→ No trailing slash, no absolute path, no '..', no double slashes or backslashes allowed."
+            exit 1
+          fi
+        else
+          log_error "Multiple folder arguments are not supported."
+          usage
+          exit 1
+        fi
+        ;;
+    esac
+  done
+
+  log_debug "Debug mode enabled"
+  if [[ "$DRY_RUN" == true ]]; then log_info "Dry-run mode enabled"; fi
+
+  setup_logging "2"
+
+  TARGET_DIR="${SCRIPT_DIR}/${TARGET_DIR:-}"
+
+  if [[ ! -d "$TARGET_DIR" ]]; then
+    log_error "'$TARGET_DIR' does not exist!"
+    exit 1
+  fi
+
+  log_debug "Target directory: $TARGET_DIR"
+
+}
+
+# Function: check_dependencies
+# Verifies specified dependencies are installed
+# ───────────────────────────────────────
+check_dependencies() {
+  local deps=($1)
+  local failed=0
+
+  for dep in "${deps[@]}"; do
+    if ! command -v "$dep" &>/dev/null; then
+      log_warn "$dep is not installed."
+
+      if [[ "$DRY_RUN" == true ]]; then
+        log_info "Dry-run: skipping $dep installation prompt."
+        failed=1
+        continue
+      fi
+
+      read -r -p "Install $dep now? [y/N]: " install
+      if [[ "$install" =~ ^[Yy]$ ]]; then
+        case "$dep" in
+          yq)
+            install_dependency "$dep" "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64"
+            ;;
+          *)
+            install_dependency "$dep"
+            ;;
+        esac
+      else
+        log_error "$dep is required. Aborting."
+        return 1
       fi
     else
-      log "✅ Found: $file"
+      log_debug "$dep is already installed."
     fi
   done
+
+  if [[ $failed -eq 1 ]]; then
+    return 1
+  fi
+
+  return 0
 }
 
-cleanup_cache() {
-  if [ -d "$LOCAL_CACHE_DIR" ]; then
-    log "🧹 Cleaning up template cache directory: $LOCAL_CACHE_DIR"
-    $DRY_RUN || rm -rf "$LOCAL_CACHE_DIR"
+# Function: clone_sparse_checkout
+# Clone Repo with Sparse Checkout
+# ───────────────────────────────────────
+clone_sparse_checkout() {
+  local repo_url="$1"
+  local branch="${2:-main}"
+  REPO_SUBFOLDER="$3"
+  local lockfile="${TARGET_DIR}/.${SCRIPT_BASE}.conf/.$REPO_SUBFOLDER.lock"
+
+  # Ensure required parameters are provided
+  [[ -z "$repo_url" || -z "$REPO_SUBFOLDER" ]] && {
+    log_error "Missing repo_url or REPO_SUBFOLDER."
+    return 1
+  }
+
+  if [[ "$REPO_SUBFOLDER" == /* || "$REPO_SUBFOLDER" == *".."* ]]; then
+    log_error "Invalid folder path: '$REPO_SUBFOLDER'"
+    return 1
+  fi
+
+  if [[ "$DRY_RUN" == true ]]; then
+    log_info "Dry-run: skipping git clone."
+    return 0
+  fi
+
+  TMPDIR=$(mktemp -d "${TMPDIR:-/tmp}/${SCRIPT_BASE}.XXXXXX")
+  log_debug "Created temp dir: $TMPDIR"
+
+  git clone --quiet --filter=blob:none --no-checkout "$repo_url" "$TMPDIR" || {
+    log_error "Failed to clone repo."
+    return 1
+  }
+
+  if ! git -C "$TMPDIR" ls-tree -d --name-only "$branch":"$REPO_SUBFOLDER" &>/dev/null; then
+    log_error "Folder '$REPO_SUBFOLDER' not found in branch '$branch'."
+    return 1
+  fi
+
+  git -C "$TMPDIR" sparse-checkout init --cone &>/dev/null || {
+    log_error "Sparse checkout init failed."
+    return 1
+  }
+
+  git -C "$TMPDIR" sparse-checkout set "$REPO_SUBFOLDER" &>/dev/null || {
+    log_error "Sparse checkout set failed."
+    return 1
+  }
+
+  git -C "$TMPDIR" checkout "$branch" &>/dev/null || {
+    log_error "Failed to checkout branch '$branch'."
+    return 1
+  }
+
+  if [[ ! -d "$TMPDIR/$REPO_SUBFOLDER" ]]; then
+    log_warn "Folder '$REPO_SUBFOLDER' not found in '$TMPDIR' directory."
+  else
+    log_ok "Checked out folder '$REPO_SUBFOLDER' successfully."
+  fi
+
+  local revision
+  revision=$(git -C "$TMPDIR" rev-parse HEAD 2>/dev/null) || {
+    log_error "Failed to get git revision."
+    return 1
+  }
+
+  # Check existing lockfile
+  local locked_rev=""
+  if [[ -f "$lockfile" ]]; then
+    locked_rev=$(<"$lockfile")
+    if [[ "$locked_rev" == "$revision" ]]; then
+      log_ok "Template already up to date (rev: $revision)"
+    elif [[ "$FORCE" == false ]]; then
+      log_info "Template update available. Run with --force to apply. Locked: $locked_rev, Current: $revision"
+    fi
+  else
+    INITIAL_RUN=true
+    log_info "No lockfile found. Assuming initial clone."
+  fi
+
+  # Write lockfile if forced or initial run
+  if [[ "$INITIAL_RUN" == true || "$FORCE" == true ]] && [[ -z "$locked_rev" || "$locked_rev" != "$revision" ]]; then
+    echo "$revision" > "$lockfile" || {
+      log_error "Failed to write lockfile $lockfile"
+      return 1
+    }
+    log_ok "Wrote template revision to $lockfile"
   fi
 }
 
-cleanup_on_exit() {
-  if [[ -f "$LOCKFILE" ]]; then
-    rm -f "$LOCKFILE"
-    debug "Lock file removed on exit"
+# Function: copy_required_services
+# Copy and merge all required service files and configurations
+# ───────────────────────────────────────
+copy_required_services() {
+  local app_compose="${TARGET_DIR}/docker-compose.app.yaml"
+  local app_env="${TARGET_DIR}/app.env"
+  local main_compose="${TARGET_DIR}/docker-compose.main.yaml"
+  local main_env="${TARGET_DIR}/.env"
+  local backup_dir="${TARGET_DIR}/.${SCRIPT_BASE}.conf/.backups"
+  local -A seen_vars=()
+
+  if [[ ! -f "$app_compose" ]]; then
+    log_error "File '$app_compose' doesn't exist"
+    return 1
   fi
-  cleanup_cache
+
+  # Parsing $app_compose
+  log_info "Parsing $app_compose for required services..."
+  
+  local requires=$(yq '.x-required-services[]' "$app_compose" 2> /dev/null | sort -u)
+  
+  if [[ -z "$requires" ]]; then
+    log_warning "No services found in x-required-services."
+  else
+    log_info "Found required services:"
+    while IFS= read -r service; do
+      log_info "   • ${MAGENTA}${service}${RESET}"
+    done <<< "$requires"
+  fi
+
+  # Copy all required files for the services (docker-compose.*.yaml, /secrets/*, /scripts/*)
+  if [[ "$DRY_RUN" == true ]]; then
+    log_info "Dry-run: skipping of copying required services."
+    return 0
+  fi
+
+  # If app.env not exist move it from the initial .env
+  if [[ -f "$main_env" && ! -f "$app_env" ]]; then
+    mv "$main_env" "$app_env"
+    log_info "Found legacy $main_env file – renamed to $app_env"
+  elif [[ -f "$main_env" && -f "$app_env" ]]; then
+    rm -f "$main_env"
+    log_debug "Both $main_env and $app_env exist – deleted $main_env"
+  fi
+
+  process_merge_file "${app_env}" "${main_env}" seen_vars
+  process_merge_yaml_file "${app_compose}" "${main_compose}"
+
+  if [[ "$FORCE" == true ]]; then
+    backup_existing_file "${app_compose}" "${backup_dir}"
+    backup_existing_file "${app_env}" "${backup_dir}"
+  fi
+
+  for service in $requires; do
+    local template_dir="${TMPDIR}/${REPO_SUBFOLDER}"
+    local template_compose_file="${template_dir}/${service}/docker-compose.${service}.yaml"
+    local template_env_file="${template_dir}/${service}/.env"
+
+    log_info "Processing required service: ${MAGENTA}${service}${RESET}"
+
+    if [[ "$FORCE" == true ]]; then
+      backup_existing_file "${template_compose_file}" "${backup_dir}"
+    fi
+
+    if [[ "$INITIAL_RUN" == true || "$FORCE" == true ]]; then
+      merge_subfolders_from "${template_dir}" "${service}" "${TARGET_DIR}"
+      copy_file "${template_compose_file}" "${TARGET_DIR}"
+      process_merge_yaml_file "${template_compose_file}" "${main_compose}"
+    fi
+
+    process_merge_file "${template_env_file}" "${main_env}" seen_vars
+
+  done
+
+  log_ok "All required services processed"
+
+  if [[ "$FORCE" == true ]]; then
+    log_ok "All templates backuped and updated (replaced)!"
+  fi
 }
 
-# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-# Docker management
-# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# Function: pull_docker_images
+# Pull latest docker images from merged compose file and show tag + image ID before and after pull.
+# Arguments:
+#   $1 - path to merged compose YAML file
+#   $2 - path to env file (to load variables)
+# Logs all steps, supports DRY_RUN.
+# ───────────────────────────────────────
 pull_docker_images() {
-  log "⬇️ Pulling latest Docker images for services from $MERGED_COMPOSE..."
+  local merged_compose_file="$1"
+  local env_file="$2"
 
-  local env_file="$TARGET_DIR/.env"
+  if [[ -z "$merged_compose_file" || -z "$env_file" ]]; then
+    log_error "Missing arguments: merged_compose_file and env_file are required."
+    return 1
+  fi
+
+  if [[ ! -f "$merged_compose_file" ]]; then
+    log_error "Merged compose file '$merged_compose_file' does not exist."
+    return 1
+  fi
 
   if [[ -f "$env_file" ]]; then
-    log "📄 Loading environment variables from $env_file"
+    log_debug "Loading environment variables from $env_file"
     set -a
     # shellcheck source=/dev/null
     source "$env_file"
     set +a
   else
-    log "⚠️ Env file $env_file not found. Cannot resolve image variables."
+    log_warn "Env file '$env_file' not found. Cannot resolve image variables."
     return 1
   fi
 
-  local services
-  services=$(yq e '.services | keys | .[]' "$MERGED_COMPOSE")
+  local services image_raw image image_id_before image_id_after svc
+
+  services=$(yq e '.services | keys | .[]' "$merged_compose_file")
+  if [[ -z "$services" ]]; then
+    log_warn "No services found in $merged_compose_file"
+    return 0
+  fi
 
   for svc in $services; do
-    local image_raw image
-    image_raw=$(yq e ".services.\"$svc\".image" "$MERGED_COMPOSE")
+    image_raw=$(yq e ".services.\"$svc\".image" "$merged_compose_file")
     image=$(eval echo "$image_raw")
 
     if [[ "$image" != "null" && -n "$image" ]]; then
-      log "⬇️ Pulling image for service $svc: $image"
+      # Get image ID before pull (empty if not found)
+      image_id_before=$(docker image inspect --format='{{.Id}}' "$image" 2>/dev/null || echo "none")
+
+      log_info "Service '${MAGENTA}${svc}${RESET}' - Image tag: $image"
+      log_debug "Image ID before pull: $image_id_before"
+
+      if [[ "${DRY_RUN:-false}" == true ]]; then
+        log_info "Dry-run: would pull image '$image'"
+        continue
+      fi
+
       if docker pull "$image" --quiet >/dev/null 2>&1; then
-        log "✅ Pulled $image successfully"
+        # Get image ID after pull (empty if not found)
+        image_id_after=$(docker image inspect --format='{{.Id}}' "$image" 2>/dev/null || echo "none")
+
+        log_info "Pulled image '$image' successfully."
+        log_debug "Image ID after pull:  $image_id_after"
+
+        if [[ "$image_id_before" == "$image_id_after" ]]; then
+          log_ok "Image was already up to date."
+        else
+          log_ok "Image updated."
+        fi
       else
-        log "❌ Failed to pull $image"
+        log_error "Failed to pull image '$image'."
       fi
     else
-      log "⚠️ No image defined for service $svc, skipping."
+      log_warn "No image defined for service '$svc', skipping."
     fi
   done
 }
 
+# Function: delete_docker_volumes
+# Deletes Docker volumes defined in the given compose file.
+# Stops the docker-compose project first if running (interactive prompt unless --force).
+# Arguments:
+#   $1 - path to merged compose YAML file
+# Supports DRY_RUN and FORCE.
+# ───────────────────────────────────────
 delete_docker_volumes() {
-  log "🧹 Deleting Docker volumes defined in $MERGED_COMPOSE..."
+  local compose_file="$1"
+
+  if [[ -z "$compose_file" ]]; then
+    log_error "Missing argument: compose_file is required."
+    return 1
+  fi
+
+  if [[ ! -f "$compose_file" ]]; then
+    log_error "Compose file '$compose_file' does not exist."
+    return 1
+  fi
+
+  local project_name
+  project_name="$(basename "$(dirname "$compose_file")")"
+  local project_name_lc
+  project_name_lc="$(echo "$project_name" | tr '[:upper:]' '[:lower:]')"
+
+  # Check if project is running
+  local running_containers
+  running_containers=$(docker ps --filter "label=com.docker.compose.project=$project_name_lc" --format '{{.ID}}')
+
+  if [[ -n "$running_containers" ]]; then
+    if [[ "${FORCE:-false}" == true ]]; then
+      log_warn "Docker Compose project '$project_name_lc' is running. Forcing shutdown."
+    else
+      read -r -p "Docker Compose project '$project_name_lc' is running. Stop it now? [y/N]: " confirm
+      if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        log_info "Aborting volume deletion."
+        return 0
+      fi
+    fi
+
+    if [[ "${DRY_RUN:-false}" == true ]]; then
+      log_info "Dry-run: would run 'docker compose down' for project '$project_name_lc'"
+    else
+      log_info "Stopping Docker Compose project '$project_name_lc'"
+      docker compose -p "$project_name_lc" -f "$compose_file" down || {
+        log_error "Failed to stop Compose project '$project_name_lc'"
+        return 1
+      }
+    fi
+  fi
+
+  log_info "Deleting Docker volumes defined in $compose_file for project '$project_name_lc'"
 
   local volumes
-  volumes=$(yq e '.volumes | keys | .[]' "$MERGED_COMPOSE")
+  volumes=$(yq e '.volumes | keys | .[]' "$compose_file" 2>/dev/null || true)
 
+  if [[ -z "$volumes" ]]; then
+    log_warn "No volumes defined in $compose_file"
+    return 0
+  fi
+
+  local vol full_volume_name
   for vol in $volumes; do
-    local full_volume_name="${COMPOSE_PROJECT_NAME}_${vol}"
+    full_volume_name="${project_name_lc}_${vol}"
+    full_volume_name="$(echo "$full_volume_name" | tr '[:upper:]' '[:lower:]')"
+
     if docker volume inspect "$full_volume_name" >/dev/null 2>&1; then
-      log "🗑️ Removing volume: $full_volume_name"
-      docker volume rm "$full_volume_name" >/dev/null 2>&1 \
-        && log "✅ Removed $full_volume_name" \
-        || log "❌ Failed to remove $full_volume_name"
+      if [[ "${DRY_RUN:-false}" == true ]]; then
+        log_info "Dry-run: would remove volume '$full_volume_name'"
+      else
+        log_debug "Removing volume: $full_volume_name"
+        if docker volume rm "$full_volume_name" >/dev/null 2>&1; then
+          log_ok "Removed $full_volume_name"
+        else
+          log_error "Failed to remove $full_volume_name"
+        fi
+      fi
     else
-      log "⚠️ Volume $full_volume_name does not exist, skipping."
+      log_warn "Volume '$full_volume_name' does not exist, skipping"
     fi
   done
 }
 
-# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-# Main
-# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-main() {
-  parse_cli_args "${ARGS[@]}"
-  check_install_yq
-  fetch_templates
-  check_template_state
-  parse_required_services
-  [ "$DRY_RUN" = false ] && backup_existing_compose_env || log "💡 Dry-run: Skipping Backing up existing compose and .env files."
-  copy_templates_and_secrets
-  copy_scripts
-  [ "$DRY_RUN" = false ] && merge_env_files || log "💡 Dry-run: Skipping .env creation."
-  [ "$DRY_RUN" = false ] && merge_compose_files || log "💡 Dry-run: Skipping $MERGED_COMPOSE generation."
-  [ "$DRY_RUN" = false ] && echo "$TEMPLATE_VERSION" > "$LOCKFILE" && log "🔒 Updated lockfile: $LOCKFILE"
-  verify_compose_files
-  [ "$UPDATE_IMAGES" = true ] && pull_docker_images || log "💡 Skipping docker image update because UPDATE_IMAGES is false."
-  [ "$DELETE_VOLUMES" = true ] && delete_docker_volumes || log "💡 Skipping docker volume deletion because DELETE_VOLUMES is false."
-  cleanup_cache
-  [ "$DRY_RUN" = false ] && log "ℹ️ Setup complete. Run "$MERGED_COMPOSE" script to start Docker Compose." || log "💡 Dry-run: "$MERGED_COMPOSE" not generated."
+# Function: generate_password
+# Generate a YAML-compatible password and write it into files under a source directory.
+# Arguments:
+#   $1 - source directory (mandatory)
+#   $2 - (optional) password length (defaults to 100 if not numeric or not set)
+#   $3 - (optional) specific filename (only that file will be written)
+# Notes:
+#   - Overwrites existing files
+#   - Uses DRY_RUN if set to true
+#   - Generates passwords with YAML-safe characters (no ', ", \)
+# ───────────────────────────────────────
+generate_password() {
+  local src_dir="$1"
+  local len_arg="$2"
+  local file_arg="$3"
+
+  if [[ -z "$src_dir" ]]; then
+    log_error "Missing source directory as first argument."
+    return 1
+  fi
+
+  if [[ ! -d "$src_dir" ]]; then
+    log_error "Source directory '$src_dir' does not exist."
+    return 1
+  fi
+
+  local pw_length=100
+  if [[ "$len_arg" =~ ^[0-9]+$ ]]; then
+    pw_length="$len_arg"
+  elif [[ -n "$len_arg" && -z "$file_arg" ]]; then
+    # len_arg is not numeric, so treat it as filename
+    file_arg="$len_arg"
+  fi
+
+  local files=()
+  if [[ -n "$file_arg" ]]; then
+    files+=("$src_dir/$file_arg")
+  else
+    while IFS= read -r -d '' f; do
+      files+=("$f")
+    done < <(find "$src_dir" -maxdepth 1 -type f -print0)
+  fi
+
+  local charset='A-Za-z0-9~!@#$%^&*()_+=-[]{}|:,.<>?'
+  local pw
+  for f in "${files[@]}"; do
+    pw=$(LC_ALL=C tr -dc "$charset" </dev/urandom | head -c "$pw_length")
+    if [[ "$DRY_RUN" == true ]]; then
+      log_info "Dry-run: would write password of length $pw_length to $(basename "$f")"
+    else
+      printf "%s" "$pw" > "$f"
+      log_info "Wrote password of length $pw_length → $(basename "$f")"
+    fi
+  done
 }
 
-main "$@"
+# ──────────────────────────────────────────────────────────────────────────────
+# Main Execution
+# ──────────────────────────────────────────────────────────────────────────────
+main() {
+  parse_args "$@"
+  if [[ "${UPDATE:-false}" == true ]]; then
+    pull_docker_images "${TARGET_DIR}/docker-compose.main.yaml" "${TARGET_DIR}/.env"
+  elif [[ "${DELETE_VOLUMES:-false}" == true ]]; then
+    delete_docker_volumes "${TARGET_DIR}/docker-compose.main.yaml"
+  elif [[ "${GENERATE_PASSWORD:-false}" == true ]]; then
+    generate_password "${TARGET_DIR}/secrets" "${GP_LEN}" "${GP_FILE}"
+  elif [[ -n "$TARGET_DIR" ]]; then
+    check_dependencies "git yq rsync"
+    clone_sparse_checkout "https://github.com/saervices/Docker.git" "main" "templates"
+    copy_required_services
+    if [[ "${INITIAL_RUN:-false}" == true ]]; then
+      generate_password "${TARGET_DIR}/secrets" "${GP_LEN}" "${GP_FILE}"
+    fi
+    setup_cleanup_trap
+    log_ok "Script completed successfully."
+  else
+    return 1
+  fi
+}
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Script Entry Point
+# ──────────────────────────────────────────────────────────────────────────────
+main "$@" || {
+  exit 1
+}
