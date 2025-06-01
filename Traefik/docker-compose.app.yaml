@@ -106,11 +106,11 @@ services:
       - --entrypoints.websecure.http.tls=true
       - --entrypoints.websecure.http.tls.certResolver=${CERTRESOLVER}
       - --entrypoints.websecure.http.tls.domains[0].main=${TRAEFIK_DOMAIN}
-      - --entrypoints.websecure.http.tls.domains[0].sans=*.${TRAEFIK_DOMAIN}
+      - --entrypoints.websecure.http.tls.domains[0].sans=${TRAEFIK_DOMAIN_SANS}
       # - --entrypoints.websecure.http.tls.domains[1].main=${TRAEFIK_DOMAIN_1}
-      # - --entrypoints.websecure.http.tls.domains[1].sans=*.${TRAEFIK_DOMAIN_1}
-      # - --entrypoints.websecure.http.tls.domains[1].main=${TRAEFIK_DOMAIN_2}
-      # - --entrypoints.websecure.http.tls.domains[1].sans=*.${TRAEFIK_DOMAIN_2}
+      # - --entrypoints.websecure.http.tls.domains[1].sans=${TRAEFIK_DOMAIN_1_SANS}
+      # - --entrypoints.websecure.http.tls.domains[2].main=${TRAEFIK_DOMAIN_2}
+      # - --entrypoints.websecure.http.tls.domains[2].sans=${TRAEFIK_DOMAIN_2_SANS}
       # Enable default TLS options for all routers
       - --entrypoints.websecure.http.tls.options=${TLSOPTIONS}
       # Enable default middlewares for all routers
