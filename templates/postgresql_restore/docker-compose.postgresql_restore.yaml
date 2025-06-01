@@ -78,7 +78,6 @@ services:
       POSTGRES_DB: ${TRAEFIK_HOSTNAME}
       POSTGRES_PASSWORD_FILE: /run/secrets/POSTGRES_PASSWORD
       DB_HOST: ${TRAEFIK_HOSTNAME}-postgresql
-      POSTGRES_RESTORE_FILENAME: ${POSTGRES_RESTORE_FILENAME}
     logging:                                                                                                                                                    # Configure log driver and limits to control log size and rotation
       driver: "json-file"
       options:
