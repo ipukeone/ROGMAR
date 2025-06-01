@@ -258,23 +258,23 @@ check_dependencies() {
 # Function: confirm_overwrite
 # Confirm Overwrite if Folder Exists
 # ───────────────────────────────────────
-confirm_overwrite() {
-  if [[ -d "$TARGET_DIR" ]]; then
-    log_warn "Folder '$TARGET_DIR' already exists."
-    if [[ "$DRY_RUN" = true ]]; then
-      log_info "Dry-run: skipping removal of '$TARGET_DIR'."
-    else
-      read -r -p "Overwrite it? [y/N]: " confirm
-      if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        log_info "Aborted by user."
-        return 0
-      fi
+# confirm_overwrite() {
+#   if [[ -d "$TARGET_DIR" ]]; then
+#     log_warn "Folder '$TARGET_DIR' already exists."
+#     if [[ "$DRY_RUN" = true ]]; then
+#       log_info "Dry-run: skipping removal of '$TARGET_DIR'."
+#     else
+#       read -r -p "Overwrite it? [y/N]: " confirm
+#       if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+#         log_info "Aborted by user."
+#         return 0
+#       fi
 
-      rm -rf -- "$TARGET_DIR"
-      log_debug "Removed existing folder '$TARGET_DIR'"
-    fi
-  fi
-}
+#       rm -rf -- "$TARGET_DIR"
+#       log_debug "Removed existing folder '$TARGET_DIR'"
+#     fi
+#   fi
+# }
 
 # Function: clone_sparse_checkout
 # Clone Repo with Sparse Checkout
@@ -336,17 +336,21 @@ clone_sparse_checkout() {
   fi
 }
 
-# Function: move_files
-# Move Fetched Files to Local Folder
+# Function: copy_files
+# Copy Fetched Files to Local Folder (overwrite if exists)
 # ───────────────────────────────────────
-move_files() {
+copy_files() {
   if [[ "$DRY_RUN" = true ]]; then
-    log_info "Dry-run: skipping moving folder '$TARGET_DIR'."
+    log_info "Dry-run: skipping copying folder '$TARGET_DIR'."
     return 0
   fi
 
+  if [[ "$FORCE" = true ]]; then
+    log_info "Forcing copy to folder '$TARGET_DIR'."
+  fi
+
   if [[ ! -d "$TMPDIR/$REPO_SUBFOLDER" ]]; then
-    log_error "Folder '$REPO_SUBFOLDER' not found in '$TMPDIR' directory before moving."
+    log_error "Folder '$REPO_SUBFOLDER' not found in '$TMPDIR' directory before copying."
     return 1
   fi
 
@@ -354,17 +358,18 @@ move_files() {
     log_warn "Folder '$REPO_SUBFOLDER' is empty."
   fi
 
-  if mv -- "$TMPDIR/$REPO_SUBFOLDER" "$TARGET_DIR"; then
-    log_info "Folder '$REPO_SUBFOLDER' downloaded to '$TARGET_DIR' successfully."
+  ensure_dir_exists "$TARGET_DIR"
+  if cp -r --remove-destination "$TMPDIR/$REPO_SUBFOLDER"/. "$TARGET_DIR"/; then
+    log_info "Folder '$REPO_SUBFOLDER' copied to '$TARGET_DIR' successfully."
   else
-    log_error "Failed to move folder."
+    log_error "Failed to copy folder."
     return 1
   fi
 
-  if [[ ! -f "${SCRIPT_DIR}/run.sh" ]] && [[ -f "$TMPDIR/run.sh" ]] || [[ "$FORCE" = true ]]; then
-    mv -- "$TMPDIR/run.sh" "$SCRIPT_DIR/"
+  if [[ ! -f "${SCRIPT_DIR}/run.sh" && -f "$TMPDIR/run.sh" ]] || [[ "$FORCE" = true && -f "$TMPDIR/run.sh" ]]; then
+    cp --remove-destination "$TMPDIR/run.sh" "$SCRIPT_DIR/run.sh"
     chmod +x "${SCRIPT_DIR}/run.sh"
-    log_info "Moved and made 'run.sh' executable."
+    log_info "Copied and made 'run.sh' executable."
   fi
 }
 
@@ -375,9 +380,15 @@ main() {
   parse_args "$@"  
   if [[ -n "$TARGET_DIR" ]]; then
     check_dependencies
-    confirm_overwrite
+    #confirm_overwrite
     clone_sparse_checkout
-    move_files
+    if [[ -d "$TARGET_DIR" && "$FORCE" = false ]]; then
+      log_error "Folder '$TARGET_DIR' already exist. Use --force to override it"
+      return 1
+    fi
+    if [[ "$FORCE" = true || ! -d "$TARGET_DIR" ]]; then
+      copy_files
+    fi
   else
     return 1
   fi
