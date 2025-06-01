@@ -461,6 +461,47 @@ backup_existing_file() {
   fi
 }
 
+# Function: make_scripts_executable
+# Recursively set +x permission on all scripts/files in a target directory.
+# Skips if directory doesn't exist or no files found.
+# Supports DRY_RUN to simulate the operation.
+# ───────────────────────────────────────────────────────────────────────
+make_scripts_executable() {
+  local target_dir="$1"
+
+  # Check argument
+  if [[ -z "$target_dir" ]]; then
+    log_error "Missing argument: target_dir"
+    return 1
+  fi
+
+  if [[ ! -d "$target_dir" ]]; then
+    log_error "Target directory '$target_dir' does not exist"
+    return 1
+  fi
+
+  local file_found=false
+
+  find "$target_dir" -type f -print0 | while IFS= read -r -d '' file; do
+    file_found=true
+    if [[ "$DRY_RUN" == true ]]; then
+      log_info "Dry-run: would chmod +x '$file'"
+    else
+      chmod +x "$file" || {
+        log_error "Failed to chmod +x '$file'"
+        return 1
+      }
+      log_info "Set executable permission on '$file'"
+    fi
+  done
+
+  if [[ "$file_found" = false ]]; then
+    log_info "No files found in '$target_dir' to make executable"
+  fi
+
+  return 0
+}
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Main Function
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1007,6 +1048,7 @@ main() {
     if [[ "${INITIAL_RUN:-false}" == true ]]; then
       generate_password "${TARGET_DIR}/secrets" "${GP_LEN}" "${GP_FILE}"
     fi
+    make_scripts_executable "${TARGET_DIR}/scripts"
     setup_cleanup_trap
     log_ok "Script completed successfully."
   else
