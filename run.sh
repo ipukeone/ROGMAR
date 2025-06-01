@@ -847,6 +847,7 @@ pull_docker_images() {
   fi
 
   local services image_raw image image_id_before image_id_after svc
+  local image_updated=false
 
   services=$(yq e '.services | keys | .[]' "$merged_compose_file")
   if [[ -z "$services" ]]; then
@@ -881,6 +882,7 @@ pull_docker_images() {
           log_ok "Image was already up to date."
         else
           log_ok "Image updated."
+          image_updated=true
         fi
       else
         log_error "Failed to pull image '$image'."
@@ -889,6 +891,30 @@ pull_docker_images() {
       log_warn "No image defined for service '$svc', skipping."
     fi
   done
+
+  if [[ "$image_updated" == true ]]; then
+    if [[ "${DRY_RUN:-false}" == true ]]; then
+      log_info "Dry-run: would restart Docker Compose services due to image updates."
+    else
+      log_info "Restarting services due to updated images..."
+
+      if docker compose --env-file "$env_file" -f "$merged_compose_file" down --remove-orphans; then
+        log_info "Services shut down successfully."
+      else
+        log_error "Failed to shut down services."
+        return 1
+      fi
+
+      if docker compose --env-file "$env_file" -f "$merged_compose_file" up -d; then
+        log_ok "Services restarted with updated images."
+      else
+        log_error "Failed to start services."
+        return 1
+      fi
+    fi
+  else
+    log_info "No services restarted, all images were up to date."
+  fi
 }
 
 # Function: delete_docker_volumes
