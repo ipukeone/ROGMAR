@@ -476,7 +476,7 @@ make_scripts_executable() {
   fi
 
   if [[ ! -d "$target_dir" ]]; then
-    log_error "Target directory '$target_dir' does not exist"
+    log_info "Target directory '$target_dir' does not exist, skipping chmod +x"
     return 1
   fi
 

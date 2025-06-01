@@ -6,11 +6,11 @@ set -eu
 : "${POSTGRES_DB:?Missing POSTGRES_DB}"
 : "${POSTGRES_PASSWORD_FILE:?Missing POSTGRES_PASSWORD_FILE}"
 : "${POSTGRES_BACKUP_INTERVAL_HOURS:?Missing POSTGRES_BACKUP_INTERVAL_HOURS}"
-: "${BACKUP_KEEP:?Missing BACKUP_KEEP}"
+: "${POSTGRES_BACKUP_KEEP:?Missing POSTGRES_BACKUP_KEEP}"
 
 BACKUP_INTERVAL_SECONDS=$((POSTGRES_BACKUP_INTERVAL_HOURS * 3600))
 
-echo "[INFO] Backup cron started. Interval: ${POSTGRES_BACKUP_INTERVAL_HOURS}h (${BACKUP_INTERVAL_SECONDS}s), Keep last ${BACKUP_KEEP} backups"
+echo "[INFO] Backup cron started. Interval: ${POSTGRES_BACKUP_INTERVAL_HOURS}h (${BACKUP_INTERVAL_SECONDS}s), Keep last ${POSTGRES_BACKUP_KEEP} backups"
 
 while true; do
   timestamp=$(date +"%Y-%m-%d_%H-%M-%S")
@@ -31,10 +31,10 @@ while true; do
   fi
 
   # Cleanup old backups
-  echo "[INFO] Cleaning up old backups (keep latest ${BACKUP_KEEP})..."
+  echo "[INFO] Cleaning up old backups (keep latest ${POSTGRES_BACKUP_KEEP})..."
   find /backup -maxdepth 1 -name "${POSTGRES_DB}_backup-*.sql" \
     | sort \
-    | head -n -"$BACKUP_KEEP" \
+    | head -n -"$POSTGRES_BACKUP_KEEP" \
     | while read -r old_file; do
         echo "[INFO] Removing old backup: $old_file"
         rm -f "$old_file"
