@@ -96,11 +96,9 @@ services:
     #######################################################################
     # --- DEPENDENCIES
     #######################################################################
-    # depends_on:                                                                                                                                               # Ensure these services are healthy before starting this one
-    #   mariadb:
-    #     condition: service_healthy
-    #   redis:
-    #     condition: service_healthy
+    depends_on:                                                                                                                                               # Ensure these services are healthy before starting this one
+      postgresql:
+        condition: service_healthy
 
     #######################################################################
     # --- SYSTEM LIMITS
