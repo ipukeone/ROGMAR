@@ -139,26 +139,32 @@ usage() {
 }
 
 # Function: install_dependency
-# Installs a dependency using apt, yum or custom URL
+# Installs a dependency using apt, yum or from a custom URL
 # ───────────────────────────────────────
 install_dependency() {
   local name="$1"
   local url="${2:-}"
-
+  
   if [[ "$DRY_RUN" == true ]]; then
     log_info "Dry-run: skipping actual installation of '$name'."
     return 0
   fi
 
+  # Always install yq via URL (binary)
+  if [[ "$name" == "yq" && -n "$url" ]]; then
+    sudo wget -q -O "/usr/local/bin/yq" "$url"
+    sudo chmod +x "/usr/local/bin/yq"
+    log_info "Installed yq via direct binary download."
+    return 0
+  fi
+
+  # Install other tools via package manager
   if command -v apt-get &>/dev/null; then
     sudo apt-get update -qq &>/dev/null && sudo apt-get install -y -qq "$name" &>/dev/null
   elif command -v yum &>/dev/null; then
     sudo yum install -y "$name" -q -e 0 &>/dev/null
-  elif [[ -n "$url" ]]; then
-    sudo wget -q -O "/usr/local/bin/$name" "$url"
-    sudo chmod +x "/usr/local/bin/$name"
   else
-    log_error "No supported package manager and no fallback URL provided for '$name'."
+    log_error "No supported package manager available for '$name'."
     return 1
   fi
 
@@ -620,14 +626,11 @@ check_dependencies() {
 
       read -r -p "Install $dep now? [y/N]: " install
       if [[ "$install" =~ ^[Yy]$ ]]; then
-        case "$dep" in
-          yq)
-            install_dependency "$dep" "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64"
-            ;;
-          *)
-            install_dependency "$dep"
-            ;;
-        esac
+        if [[ "$dep" == "yq" ]]; then
+          install_dependency "$dep" "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64"
+        else
+          install_dependency "$dep"
+        fi
       else
         log_error "$dep is required. Aborting."
         return 1
