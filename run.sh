@@ -477,13 +477,13 @@ make_scripts_executable() {
 
   if [[ ! -d "$target_dir" ]]; then
     log_info "Target directory '$target_dir' does not exist, skipping chmod +x"
-    return 1
+    return 0
   fi
 
-  local file_found=false
+  local found_any=false
 
-  find "$target_dir" -type f -print0 | while IFS= read -r -d '' file; do
-    file_found=true
+  while IFS= read -r -d '' file; do
+    found_any=true
     if [[ "$DRY_RUN" == true ]]; then
       log_info "Dry-run: would chmod +x '$file'"
     else
@@ -493,9 +493,9 @@ make_scripts_executable() {
       }
       log_info "Set executable permission on '$file'"
     fi
-  done
+  done < <(find "$target_dir" -type f -print0)
 
-  if [[ "$file_found" = false ]]; then
+  if [[ "$found_any" == false ]]; then
     log_info "No files found in '$target_dir' to make executable"
   fi
 
