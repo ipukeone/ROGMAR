@@ -44,10 +44,10 @@ services:
     volumes:                                                                                                                                                    # Mount external storage or host directories into the container for persistent data or config
       - /etc/localtime:/etc/localtime:ro                                                                                                                        # Set container time to host time
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
-      - ./config/middlewares.yaml:/etc/traefik/conf.d/middlewares.yaml:ro                                                                                       # Traefik middlewares
-      - ./config/tls-opts.yaml:/etc/traefik/conf.d/tls-opts.yaml:ro                                                                                             # Traefik TLS config
-      - ./config/conf.d/:/etc/traefik/conf.d/rules/:ro                                                                                                          # Traefik file routers
-      - ./config/certs/:/var/traefik/certs/:rw                                                                                                                  # Traefik certificate store
+      - ./appdata/middlewares.yaml:/etc/traefik/conf.d/middlewares.yaml:ro                                                                                      # Traefik middlewares
+      - ./appdata/tls-opts.yaml:/etc/traefik/conf.d/tls-opts.yaml:ro                                                                                            # Traefik TLS config
+      - ./appdata/conf.d/:/etc/traefik/conf.d/rules/:ro                                                                                                         # Traefik file routers
+      - ./appdata/certs/:/var/traefik/certs/:rw                                                                                                                 # Traefik certificate store
     secrets:                                                                                                                                                    # Mount the defined secret into the container (usually under /run/secrets/)
       - CF_DNS_API_TOKEN
 
