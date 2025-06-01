@@ -755,7 +755,7 @@ copy_required_services() {
   local requires=$(yq '.x-required-services[]' "$app_compose" 2> /dev/null | sort -u)
   
   if [[ -z "$requires" ]]; then
-    log_warning "No services found in x-required-services."
+    log_warn "No services found in x-required-services."
   else
     log_info "Found required services:"
     while IFS= read -r service; do
