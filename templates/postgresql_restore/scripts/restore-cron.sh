@@ -18,7 +18,7 @@ if [ ! -f "$POSTGRES_PASSWORD_FILE" ]; then
   exit 1
 fi
 
-PGPASSWORD="$(cat "$POSTGRES_PASSWORD_FILE)"
+PGPASSWORD="$(cat "$POSTGRES_PASSWORD_FILE")"
 
 found_files=false
 
