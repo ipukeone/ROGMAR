@@ -13,5 +13,4 @@ http:
     truenas-svc:                                                                                                                                                # Adjust the service name to match the service name above
       loadBalancer:
         servers:
-          # - url: "https://192.168.20.200/"                                                                                                                    # Adjust the url to your application
           - url: "https://192.168.10.200/"                                                                                                                      # Adjust the url to your application
