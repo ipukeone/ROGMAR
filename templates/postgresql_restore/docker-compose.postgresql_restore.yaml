@@ -77,6 +77,7 @@ services:
       POSTGRES_USER: ${TRAEFIK_HOSTNAME}
       POSTGRES_DB: ${TRAEFIK_HOSTNAME}
       POSTGRES_PASSWORD_FILE: /run/secrets/POSTGRES_PASSWORD
+      DB_HOST: ${TRAEFIK_HOSTNAME}-postgresql
       POSTGRES_RESTORE_FILENAME: ${POSTGRES_RESTORE_FILENAME}
     logging:                                                                                                                                                    # Configure log driver and limits to control log size and rotation
       driver: "json-file"
@@ -95,11 +96,9 @@ services:
     #######################################################################
     # --- DEPENDENCIES
     #######################################################################
-    # depends_on:                                                                                                                                               # Ensure these services are healthy before starting this one
-    #   mariadb:
-    #     condition: service_healthy
-    #   redis:
-    #     condition: service_healthy
+    depends_on:                                                                                                                                               # Ensure these services are healthy before starting this one
+      postgresql:
+        condition: service_healthy
 
     #######################################################################
     # --- SYSTEM LIMITS

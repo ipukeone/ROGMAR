@@ -46,9 +46,9 @@ services:
     volumes: &authentik_common_volumes                                                                                                                          # Mount external storage or host directories into the container for persistent data or config
       - /etc/localtime:/etc/localtime:ro                                                                                                                        # Set container time to host time
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
-      - ./config/media:/media:rw                                                                                                                                # App data volume (adjust as needed)
-      - ./config/custom-templates:/templates:rw                                                                                                                 # App data volume (adjust as needed)
-      - ./config/certs:/certs:rw                                                                                                                                # App data volume (adjust as needed)
+      - ./app/media:/media:rw                                                                                                                                   # App data volume (adjust as needed)
+      - ./app/custom-templates:/templates:rw                                                                                                                    # App data volume (adjust as needed)
+      - ./app/certs:/certs:rw                                                                                                                                   # App data volume (adjust as needed)
     secrets: &authentik_common_secrets                                                                                                                          # Mount the defined secret into the container (usually under /run/secrets/)
       - POSTGRES_PASSWORD
       - REDIS_PASSWORD

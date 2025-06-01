@@ -1,8 +1,10 @@
 #!/bin/sh
 set -eu
 
+: "${DB_HOST:?Missing DB_HOST}"
 : "${POSTGRES_USER:?Missing POSTGRES_USER}"
 : "${POSTGRES_DB:?Missing POSTGRES_DB}"
+: "${POSTGRES_PASSWORD_FILE:?Missing POSTGRES_PASSWORD_FILE}"
 : "${BACKUP_INTERVAL_HOURS:?Missing BACKUP_INTERVAL_HOURS}"
 : "${BACKUP_KEEP:?Missing BACKUP_KEEP}"
 
@@ -14,8 +16,14 @@ while true; do
   timestamp=$(date +"%Y-%m-%d_%H-%M-%S")
   backup_file="/backup/${POSTGRES_DB}_backup-${timestamp}.sql"
 
+  if [ ! -f "$POSTGRES_PASSWORD_FILE" ]; then
+    echo "[ERROR] Password file not found at $POSTGRES_PASSWORD_FILE" >&2
+    exit 1
+  fi
+
   echo "[INFO] Creating backup: $backup_file"
-  if pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > "$backup_file"; then
+  if PGPASSWORD="$(cat "$POSTGRES_PASSWORD_FILE")" \
+     pg_dump -h "$DB_HOST" -U "$POSTGRES_USER" "$POSTGRES_DB" > "$backup_file"; then
     echo "[INFO] Backup successful: $backup_file"
   else
     echo "[ERROR] Backup failed!" >&2
