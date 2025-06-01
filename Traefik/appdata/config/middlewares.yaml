@@ -1,16 +1,31 @@
+#########################################################################################################
+# MIDDLEWARES
+#########################################################################################################
 http:
   middlewares:
+  ######################################################################
+  # CUSTOM MIDDLEWARES
+  ######################################################################
+    ###################################
+    # YOUR CUSTOM MIDDLEWARE GOES HERE...
+    ###################################
 
-  ### Individual middlewares
 
-    ## Websocket security headers
+  ######################################################################
+  # INDIVIDUAL MIDDLEWARES
+  ######################################################################
+    ###################################
+    # WEBSOCKET SECURITY HEADERS
+    ###################################
     websocket-security-headers:
       headers:
         customRequestHeaders:                                                                                                                                   # The customRequestHeaders option lists the header names and values to apply to the request
           Upgrade: "websocket"                                                                                                                                  # Enables WebSocket communication - **mandatory** for live editing (Collabora, OnlyOffice, ...)
           Connection: "Upgrade"                                                                                                                                 # Part of the WebSocket handshake - **mandatory** (Collabora, OnlyOffice, ...)
 
-    ## Authentik proxy
+    ###################################
+    # AUTHENTIK PROXY
+    ###################################
     authentik-proxy:                                                                                                                                            # Forward to authentik to authenticate before accessing the website
             forwardAuth:
                 address: http://{{env "AUTHENTIK_CONTAINER_NAME"}}:9000/outpost.goauthentik.io/auth/traefik
@@ -30,9 +45,12 @@ http:
                     - X-authentik-meta-version
 
 
-  ### Global middlewares
-
-    ## Only allow Local networks
+  ######################################################################
+  # GLOBAL MIDDLEWARES
+  ######################################################################
+    ###################################
+    # ONLY ALLOW LOCAL NETWORKS
+    ###################################
     global-local-IPAllowList:
       IPAllowList:
         sourceRange:
@@ -41,14 +59,18 @@ http:
           - 172.16.0.0/12                                                                                                                                       # 16 contiguous class B networks
           - 192.168.0.0/16                                                                                                                                      # 256 contiguous class C networks
 
-    ## Rate limiting
+    ###################################
+    # RATE LIMITING
+    ###################################
     global-rate-limit:
       rateLimit:
         average: 100                                                                                                                                            # average is the maximum rate, by default in requests per second, allowed from a given source
         period: 1                                                                                                                                               # period, in combination with average, defines the actual maximum rate, such as r = average / period
         burst: 100                                                                                                                                              # burst is the maximum number of requests allowed to go through in the same arbitrarily small period of time
 
-    ## Buffering
+    ###################################
+    # BUFFERING
+    ###################################
     global-buffering-limit:
       buffering:
         maxRequestBodyBytes: 0                                                                                                                                  # The maxRequestBodyBytes option configures the maximum allowed body size for the request (in bytes). If the request exceeds the allowed size, it is not forwarded to the service, and the client gets a 413 (Request Entity Too Large) response
@@ -57,7 +79,9 @@ http:
         memResponseBodyBytes: 1073741824                                                                                                                        # You can configure a threshold (in bytes) from which the response will be buffered on disk instead of in memory with the memResponseBodyBytes option
         retryExpression: "IsNetworkError() && Attempts() < 2"                                                                                                   # You can have the Buffering middleware replay the request using retryExpression
 
-    ## Security headers
+    ###################################
+    # SECURITY HEADERS
+    ###################################
     global-security-headers:
       headers:
         customRequestHeaders:                                                                                                                                   # The customRequestHeaders option lists the header names and values to apply to the request

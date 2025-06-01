@@ -13,5 +13,5 @@ http:
     opnsense-svc:                                                                                                                                               # Adjust the service name to match the service name above
       loadBalancer:
         servers:
-          - url: "https://192.168.20.1:31337/"                                                                                                                  # Adjust the url to your application
+          # - url: "https://192.168.20.1:31337/"                                                                                                                # Adjust the url to your application
           - url: "https://192.168.10.1:31337/"                                                                                                                  # Adjust the url to your application
