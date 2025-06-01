@@ -1,6 +1,7 @@
 ---
 x-required-services:
   - postgresql
+  - postgresql_backup
   - redis
   - authentik-worker
 
