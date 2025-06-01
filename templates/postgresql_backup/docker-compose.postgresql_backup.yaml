@@ -77,8 +77,8 @@ services:
       POSTGRES_USER: ${TRAEFIK_HOSTNAME}
       POSTGRES_DB: ${TRAEFIK_HOSTNAME}
       POSTGRES_PASSWORD_FILE: /run/secrets/POSTGRES_PASSWORD
-      BACKUP_INTERVAL_HOURS: ${BACKUP_INTERVAL_HOURS}
-      BACKUP_KEEP: ${BACKUP_KEEP}
+      POSTGRES_BACKUP_INTERVAL_HOURS: ${POSTGRES_BACKUP_INTERVAL_HOURS}
+      POSTGRES_BACKUP_KEEP: ${POSTGRES_BACKUP_KEEP}
     logging:                                                                                                                                                    # Configure log driver and limits to control log size and rotation
       driver: "json-file"
       options:
