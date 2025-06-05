@@ -1,0 +1,23 @@
+#########################################################################################################
+# ROUTERS
+# Replace all "template" with your "app" name!
+# Adjust the HostRexexp.
+# Single subdomain = HostRegexp(`^((template\.prd))\.{{env "TRAEFIK_DOMAIN"}}$`)
+# Multiple subdomains = HostRegexp(`^((template\.prd)|(template\.it)|(template2\.it))\.{{env "TRAEFIK_DOMAIN"}}$`)
+#########################################################################################################
+http:
+  routers:
+    template-rtr:                                                                                                                                               # Adjust the router name (e.g. [HOSTNAME]-rtr)
+      rule: >                                                                                                                                                   # Adjust the [HOSTNAME]
+        HostRegexp(`^((template\.prd))\.{{env "TRAEFIK_DOMAIN"}}$`)
+        # || HostRegexp(`^((template\.it)|(template2\.it))\.{{env "TRAEFIK_DOMAIN_1"}}$`)
+        # || HostRegexp(`^((template\.it)|(template2\.it))\.{{env "TRAEFIK_DOMAIN_2"}}$`)
+      # middlewares:                                                                                                                                            # Optional: Add specific middlewares to this router
+      #   - middleware@file
+      service: template-svc                                                                                                                                     # Adjust the service name (e.g. [HOSTNAME]-svc)
+
+  services:
+    template-svc:                                                                                                                                               # Adjust the service name to match the service name above
+      loadBalancer:
+        servers:
+          - url: "https://192.168.10.1:31337/"                                                                                                                  # Adjust the url to your application

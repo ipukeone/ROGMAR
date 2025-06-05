@@ -1,14 +1,14 @@
 http:
   routers:
     pve-rtr:                                                                                                                                                    # Adjust the router name (e.g. [HOSTNAME]-rtr)
-      rule: 'Host(`pve.{{env "TRAEFIK_DOMAIN"}}`)'                                                                                                              # Adjust the [HOSTNAME]
-      # entryPoints:                                                                                                                                            # Optional: Use an entryPoint other than the default
-      #   - websecure
+      rule: >                                                                                                                                                   # Adjust the [HOSTNAME]
+        HostRegexp(`^((pve\.prd))\.{{env "TRAEFIK_DOMAIN"}}$`)
+        # || HostRegexp(`^((template\.it)|(template2\.it))\.{{env "TRAEFIK_DOMAIN_1"}}$`)
+        # || HostRegexp(`^((template\.it)|(template2\.it))\.{{env "TRAEFIK_DOMAIN_2"}}$`)
       # middlewares:                                                                                                                                            # Optional: Add specific middlewares to this router
-      #   middleware@file
+      #   - middleware@file
       service: pve-svc                                                                                                                                          # Adjust the service name (e.g. [HOSTNAME]-svc)
-      # tls:                                                                                                                                                    # Optional: Add specific tls options to this router
-      #   certResolver: cloudflare
+
   services:
     pve-svc:                                                                                                                                                    # Adjust the service name to match the service name above
       loadBalancer:

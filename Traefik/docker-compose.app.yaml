@@ -8,8 +8,8 @@ services:
     # --- CONTAINER BASICS
     ######################################################################
     image: ${IMAGE:?Image required}
-    container_name: ${TRAEFIK_HOSTNAME:?Hostname required}
-    hostname: ${TRAEFIK_HOSTNAME}
+    container_name: ${APP_NAME:?App name required}
+    hostname: ${APP_NAME}
     restart: unless-stopped                                                                                                                                     # Automatically restart unless manually stopped
     # build:                                                                                                                                                    # Optional: build image from local Dockerfile
     #   context: .
@@ -56,9 +56,13 @@ services:
     ######################################################################
     labels:                                                                                                                                                     # Metadata for the container, often used for service discovery or reverse proxy rules (e.g., Traefik)
       - "traefik.enable=true"                                                                                                                                   # Enable Traefik reverse proxy routing for this container
-      - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.rule=${TRAEFIK_HOST}"                                                                                     # FQDNs for Traefik router rule
-      - "traefik.http.services.${TRAEFIK_HOSTNAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT:?Port required}"                                                 # Internal container port
-      - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.middlewares=authentik-proxy@file"                                                                         # Optional Middlewares: Authentik proxy authentication
+      - >                                                                                                                                                       # FQDNs for Traefik router rule
+        traefik.http.routers.${APP_NAME}-rtr.rule=
+        HostRegexp(`^(${TRAEFIK_SUBDOMAIN})\\.${TRAEFIK_DOMAIN}$`)
+      # || HostRegexp(`^(${TRAEFIK_SUBDOMAIN_1})\\.${TRAEFIK_DOMAIN_1}$`)
+      # || HostRegexp(`^(${TRAEFIK_SUBDOMAIN_2})\\.${TRAEFIK_DOMAIN_2}$`)
+      - "traefik.http.services.${APP_NAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT:?Port required}"                                                         # Internal container port
+      - "traefik.http.routers.${APP_NAME}-rtr.middlewares=authentik-proxy@file"                                                                                 # Optional Middlewares: Authentik proxy authentication
     ports:                                                                                                                                                      # Optional: exposed ports
       - 80:80
       - 443:443
@@ -119,7 +123,7 @@ services:
       - --providers.file.directory=/etc/traefik/conf.d
       - --providers.docker=true
       - --providers.docker.network=frontend
-      - --providers.docker.endpoint=tcp://${TRAEFIK_HOSTNAME}-socketproxy:2375
+      - --providers.docker.endpoint=tcp://${APP_NAME}-socketproxy:2375
       - --providers.docker.defaultrule='Host(`{{ index .Labels "com.docker.compose.service"}}.{{ env "TRAEFIK_DOMAIN" }}`)'
       - --providers.docker.exposedbydefault=false
       ### Lets Encrypt for SSL certificates
