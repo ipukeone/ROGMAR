@@ -5,8 +5,8 @@ services:
     # --- CONTAINER BASICS
     ######################################################################
     image: ${POSTGRES_IMAGE:?Image required}
-    container_name: ${TRAEFIK_HOSTNAME:?Hostname required}-postgresql
-    hostname: ${TRAEFIK_HOSTNAME}-postgresql
+    container_name: ${APP_NAME:?App name required}-postgresql
+    hostname: ${APP_NAME}-postgresql
     restart: unless-stopped                                                                                                                                     # Automatically restart unless manually stopped
     # build:                                                                                                                                                    # Optional: build image from local Dockerfile
     #   context: .
@@ -54,9 +54,9 @@ services:
     ######################################################################
     # labels:                                                                                                                                                   # Metadata for the container, often used for service discovery or reverse proxy rules (e.g., Traefik)
     #   - "traefik.enable=true"                                                                                                                                 # Enable Traefik reverse proxy routing for this container
-    #   - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.rule=${TRAEFIK_HOST}"                                                                                   # FQDNs for Traefik router rule
-    #   - "traefik.http.services.${TRAEFIK_HOSTNAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT:?Port required}"                                               # Internal container port
-    #   - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.middlewares=authentik-proxy@file"                                                                       # Optional Middlewares: Authentik proxy authentication
+    #   - "traefik.http.routers.${APP_NAME}-rtr.rule=HostRegexp(`^(${TRAEFIK_SUBDOMAIN}).${TRAEFIK_DOMAIN}$`) || HostRegexp(`^(${TRAEFIK_SUBDOMAIN_1:-}).${TRAEFIK_DOMAIN_1:-}$`) || HostRegexp(`^(${TRAEFIK_SUBDOMAIN_2:-}).${TRAEFIK_DOMAIN_2:-}$`)"
+    #   - "traefik.http.services.${APP_NAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT:?Port required}"                                                       # Internal container port
+    #   - "traefik.http.routers.${APP_NAME}-rtr.middlewares=authentik-proxy@file"                                                                               # Optional Middlewares: Authentik proxy authentication
     # ports:                                                                                                                                                    # Optional: exposed ports
     #   - 8080:80
     # expose:                                                                                                                                                   # Optional: expose without publishing
@@ -73,8 +73,8 @@ services:
     # command: ['your', 'default', 'command']                                                                                                                   # Override default container command
     # entrypoint: ['your-entrypoint.sh']                                                                                                                        # Override default container entrypoint
     environment:                                                                                                                                                # Environment variables for container configuration
-      POSTGRES_USER: ${TRAEFIK_HOSTNAME}
-      POSTGRES_DB: ${TRAEFIK_HOSTNAME}
+      POSTGRES_USER: ${APP_NAME}
+      POSTGRES_DB: ${APP_NAME}
       POSTGRES_PASSWORD_FILE: /run/secrets/POSTGRES_PASSWORD
     logging:                                                                                                                                                    # Configure log driver and limits to control log size and rotation
       driver: "json-file"
@@ -82,7 +82,7 @@ services:
         max-size: "10m"                                                                                                                                         # Max log file size before rotation
         max-file: "3"                                                                                                                                           # Keep up to 3 rotated log files
     healthcheck:                                                                                                                                                # Periodic container health check to ensure service availability
-      test: ['CMD-SHELL', 'pg_isready -d ${TRAEFIK_HOSTNAME} -U ${TRAEFIK_HOSTNAME}']                                                                           # Command to test container health
+      test: ['CMD-SHELL', 'pg_isready -d ${APP_NAME} -U ${APP_NAME}']                                                                                           # Command to test container health
       interval: 30s                                                                                                                                             # Time between checks
       timeout: 5s                                                                                                                                               # Time to wait for response
       retries: 3                                                                                                                                                # Number of retries before marking unhealthy

@@ -48,14 +48,10 @@ services:
     # --- NETWORKING / REVERSE PROXY
     ######################################################################
     # labels:                                                                                                                                                   # Metadata for the container, often used for service discovery or reverse proxy rules (e.g., Traefik)
-      # - "traefik.enable=true"                                                                                                                                   # Enable Traefik reverse proxy routing for this container
-      # - >                                                                                                                                                       # FQDNs for Traefik router rule
-      #   traefik.http.routers.${APP_NAME}-rtr.rule=
-      #   HostRegexp(`^(${TRAEFIK_SUBDOMAIN})\\.${TRAEFIK_DOMAIN}$`)
-      # # || HostRegexp(`^(${TRAEFIK_SUBDOMAIN_1})\\.${TRAEFIK_DOMAIN_1}$`)
-      # # || HostRegexp(`^(${TRAEFIK_SUBDOMAIN_2})\\.${TRAEFIK_DOMAIN_2}$`)
-      # - "traefik.http.services.${APP_NAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT:?Port required}"                                                         # Internal container port
-      # - "traefik.http.routers.${APP_NAME}-rtr.middlewares=authentik-proxy@file"                                                                                 # Optional Middlewares: Authentik proxy authentication
+    #   - "traefik.enable=true"                                                                                                                                 # Enable Traefik reverse proxy routing for this container
+    #   - "traefik.http.routers.${APP_NAME}-rtr.rule=HostRegexp(`^(${TRAEFIK_SUBDOMAIN}).${TRAEFIK_DOMAIN}$`) || HostRegexp(`^(${TRAEFIK_SUBDOMAIN_1:-}).${TRAEFIK_DOMAIN_1:-}$`) || HostRegexp(`^(${TRAEFIK_SUBDOMAIN_2:-}).${TRAEFIK_DOMAIN_2:-}$`)"
+    #   - "traefik.http.services.${APP_NAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT:?Port required}"                                                       # Internal container port
+    #   - "traefik.http.routers.${APP_NAME}-rtr.middlewares=authentik-proxy@file"                                                                               # Optional Middlewares: Authentik proxy authentication
     # ports:                                                                                                                                                    # Optional: exposed ports
     #   - 8080:80
     # expose:                                                                                                                                                   # Optional: expose without publishing

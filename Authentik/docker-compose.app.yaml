@@ -12,8 +12,8 @@ services:
     # --- CONTAINER BASICS
     ######################################################################
     image: ${IMAGE:?Image required}
-    container_name: ${TRAEFIK_HOSTNAME:?Hostname required}
-    hostname: ${TRAEFIK_HOSTNAME}
+    container_name: ${APP_NAME:?App name required}
+    hostname: ${APP_NAME}
     restart: unless-stopped                                                                                                                                     # Automatically restart unless manually stopped
     # build:                                                                                                                                                    # Optional: build image from local Dockerfile
     #   context: .
@@ -60,9 +60,9 @@ services:
     ######################################################################
     labels:                                                                                                                                                     # Metadata for the container, often used for service discovery or reverse proxy rules (e.g., Traefik)
       - "traefik.enable=true"                                                                                                                                   # Enable Traefik reverse proxy routing for this container
-      - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.rule=${TRAEFIK_HOST}"                                                                                     # FQDNs for Traefik router rule
-      - "traefik.http.services.${TRAEFIK_HOSTNAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT:?Port required}"                                                 # Internal container port
-    #   - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.middlewares=authentik-proxy@file"                                                                       # Optional Middlewares: Authentik proxy authentication
+      - "traefik.http.routers.${APP_NAME}-rtr.rule=HostRegexp(`^(${TRAEFIK_SUBDOMAIN}).${TRAEFIK_DOMAIN}$`) || HostRegexp(`^(${TRAEFIK_SUBDOMAIN_1:-}).${TRAEFIK_DOMAIN_1:-}$`) || HostRegexp(`^(${TRAEFIK_SUBDOMAIN_2:-}).${TRAEFIK_DOMAIN_2:-}$`)"
+      - "traefik.http.services.${APP_NAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT:?Port required}"                                                         # Internal container port
+    #   - "traefik.http.routers.${APP_NAME}-rtr.middlewares=authentik-proxy@file"                                                                               # Optional Middlewares: Authentik proxy authentication
     # ports:                                                                                                                                                    # Optional: exposed ports
     #  - "9000:9000"
     #  - "9443:9443"
@@ -82,12 +82,12 @@ services:
     # entrypoint: ['your-entrypoint.sh']                                                                                                                        # Override default container entrypoint
     environment: &authentik_common_environment                                                                                                                  # Environment variables for container configuration
       # PostgreSQL
-      AUTHENTIK_POSTGRESQL__HOST: ${TRAEFIK_HOSTNAME}-postgresql
-      AUTHENTIK_POSTGRESQL__USER: ${TRAEFIK_HOSTNAME}
-      AUTHENTIK_POSTGRESQL__NAME: ${TRAEFIK_HOSTNAME}
+      AUTHENTIK_POSTGRESQL__HOST: ${APP_NAME}-postgresql
+      AUTHENTIK_POSTGRESQL__USER: ${APP_NAME}
+      AUTHENTIK_POSTGRESQL__NAME: ${APP_NAME}
       AUTHENTIK_POSTGRESQL__PASSWORD: file:///run/secrets/POSTGRES_PASSWORD
       # Redis
-      AUTHENTIK_REDIS__HOST: ${TRAEFIK_HOSTNAME}-redis
+      AUTHENTIK_REDIS__HOST: ${APP_NAME}-redis
       AUTHENTIK_REDIS__PASSWORD: file:///run/secrets/REDIS_PASSWORD
       # Authentik
       AUTHENTIK_ERROR_REPORTING__ENABLED: ${AUTHENTIK_ERROR_REPORTING__ENABLED}
@@ -100,7 +100,7 @@ services:
       # AUTHENTIK_EMAIL__USE_TLS: ${AUTHENTIK_EMAIL__USE_TLS}
       # AUTHENTIK_EMAIL__USE_SSL: ${AUTHENTIK_EMAIL__USE_SSL}
       # AUTHENTIK_EMAIL__TIMEOUT: ${AUTHENTIK_EMAIL__TIMEOUT}
-      # AUTHENTIK_EMAIL__FROM: ${TRAEFIK_HOSTNAME}@${TRAEFIK_DOMAIN}
+      # AUTHENTIK_EMAIL__FROM: ${APP_NAME}@${TRAEFIK_DOMAIN}
     logging:                                                                                                                                                    # Configure log driver and limits to control log size and rotation
       driver: "json-file"
       options:

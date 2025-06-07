@@ -8,8 +8,8 @@ services:
     # --- CONTAINER BASICS
     ######################################################################
     image: ${IMAGE:?Image required}
-    container_name: ${TRAEFIK_HOSTNAME:?Hostname required}
-    hostname: ${TRAEFIK_HOSTNAME}
+    container_name: ${APP_NAME:?App name required}
+    hostname: ${APP_NAME}
     restart: unless-stopped                                                                                                                                     # Automatically restart unless manually stopped
     # build:                                                                                                                                                    # Optional: build image from local Dockerfile
     #   context: .
@@ -54,9 +54,9 @@ services:
     ######################################################################
     labels:                                                                                                                                                     # Metadata for the container, often used for service discovery or reverse proxy rules (e.g., Traefik)
       - "traefik.enable=true"                                                                                                                                   # Enable Traefik reverse proxy routing for this container
-      - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.rule=${TRAEFIK_HOST}"                                                                                     # FQDNs for Traefik router rule
-      - "traefik.http.services.${TRAEFIK_HOSTNAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT:?Port required}"                                                 # Internal container port
-      - "traefik.http.routers.${TRAEFIK_HOSTNAME}-rtr.middlewares=authentik-proxy@file"                                                                         # Optional Middlewares: Authentik proxy authentication
+      - "traefik.http.routers.${APP_NAME}-rtr.rule=HostRegexp(`^(${TRAEFIK_SUBDOMAIN}).${TRAEFIK_DOMAIN}$`) || HostRegexp(`^(${TRAEFIK_SUBDOMAIN_1:-}).${TRAEFIK_DOMAIN_1:-}$`) || HostRegexp(`^(${TRAEFIK_SUBDOMAIN_2:-}).${TRAEFIK_DOMAIN_2:-}$`)"
+      - "traefik.http.services.${APP_NAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT:?Port required}"                                                         # Internal container port
+      - "traefik.http.routers.${APP_NAME}-rtr.middlewares=authentik-proxy@file"                                                                                 # Optional Middlewares: Authentik proxy authentication
     # ports:                                                                                                                                                    # Optional: exposed ports
     #   - 8080:80
     # expose:                                                                                                                                                   # Optional: expose without publishing
@@ -77,7 +77,7 @@ services:
       PGID: 0
       DEFAULT_WORKSPACE: /compose                                                                                                                               # If this optional variable is set, code-server will open this directory by default
       DOCKER_MODS: ${DOCKER_MODS}                                                                                                                               # Docker mods to enable additional functionality (Docker-CLI)
-      DOCKER_HOST: tcp://${TRAEFIK_HOSTNAME}-socketproxy:2375                                                                                                   # Connect to socketproxy
+      DOCKER_HOST: tcp://${APP_NAME}-socketproxy:2375                                                                                                           # Connect to socketproxy
     logging:                                                                                                                                                    # Configure log driver and limits to control log size and rotation
       driver: "json-file"
       options:
