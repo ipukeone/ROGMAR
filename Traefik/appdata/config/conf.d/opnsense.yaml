@@ -2,9 +2,9 @@ http:
   routers:
     opnsense-rtr:                                                                                                                                               # Adjust the router name (e.g. [HOSTNAME]-rtr)
       rule: >                                                                                                                                                   # Adjust the [HOSTNAME]
-        HostRegexp(`^((opnsense\.prd))\.{{env "TRAEFIK_DOMAIN"}}$`)
-        # || HostRegexp(`^((template\.it)|(template2\.it))\.{{env "TRAEFIK_DOMAIN_1"}}$`)
-        # || HostRegexp(`^((template\.it)|(template2\.it))\.{{env "TRAEFIK_DOMAIN_2"}}$`)
+        HostRegexp(`^((opnsense.prd)).{{env "TRAEFIK_DOMAIN"}}$`)
+      # || HostRegexp(`^((template.it)|(template2.it)).{{env "TRAEFIK_DOMAIN_1"}}$`)
+      # || HostRegexp(`^((template.it)|(template2.it)).{{env "TRAEFIK_DOMAIN_2"}}$`)
       # middlewares:                                                                                                                                            # Optional: Add specific middlewares to this router
       #   - middleware@file
       service: opnsense-svc                                                                                                                                     # Adjust the service name (e.g. [HOSTNAME]-svc)

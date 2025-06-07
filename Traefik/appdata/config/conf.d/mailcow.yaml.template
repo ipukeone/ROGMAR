@@ -2,9 +2,9 @@ http:
   routers:
     mailcow-rtr:                                                                                                                                               # Adjust the router name (e.g. [HOSTNAME]-rtr)
       rule: >                                                                                                                                                  # Adjust the [HOSTNAME]
-        HostRegexp(`^((mailcow\.prd))\.{{env "TRAEFIK_DOMAIN"}}$`)
-        # || HostRegexp(`^((template\.it)|(template2\.it))\.{{env "TRAEFIK_DOMAIN_1"}}$`)
-        # || HostRegexp(`^((template\.it)|(template2\.it))\.{{env "TRAEFIK_DOMAIN_2"}}$`)
+        HostRegexp(`^((mailcow.prd)).{{env "TRAEFIK_DOMAIN"}}$`)
+      # || HostRegexp(`^((template.it)|(template2.it)).{{env "TRAEFIK_DOMAIN_1"}}$`)
+      # || HostRegexp(`^((template.it)|(template2.it)).{{env "TRAEFIK_DOMAIN_2"}}$`)
       # middlewares:                                                                                                                                            # Optional: Add specific middlewares to this router
       #   - middleware@file
       service: mailcow-svc                                                                                                                                      # Adjust the service name (e.g. [HOSTNAME]-svc)
