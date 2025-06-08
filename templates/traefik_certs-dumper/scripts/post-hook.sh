@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+exec 1> >(stdbuf -oL cat) 2>&1
 
 #--------------------
 # DEPENDENCY CHECK

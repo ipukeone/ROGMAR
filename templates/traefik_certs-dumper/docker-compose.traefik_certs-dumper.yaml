@@ -4,7 +4,7 @@ services:
     ######################################################################
     # --- CONTAINER BASICS
     ######################################################################
-    image: ${TRAEFIK_CERTS-DUMPER_IMAGE:?Image required}
+    image: ${TRAEFIK_CERTS_DUMPER_IMAGE:?Image required}
     container_name: ${APP_NAME:?App name required}-certs-dumper
     hostname: ${APP_NAME}-certs-dumper
     restart: unless-stopped                                                                                                                                     # Automatically restart unless manually stopped
@@ -41,7 +41,7 @@ services:
       - /etc/localtime:/etc/localtime:ro                                                                                                                        # Set container time to host time
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
       - /root/.ssh/id_rsa:/root/.ssh/id_rsa:ro                                                                                                                  # Read the id_rsa file to get ssh access to remote server
-      - ./appdata/scripts/post-hook.sh:/config/post-hook.sh:ro                                                                                                  # Access to the script that should run
+      - ./scripts/post-hook.sh:/config/post-hook.sh:ro                                                                                                          # Access to the script that should run
       - ./appdata/config/certs/:/data/:rw                                                                                                                       # Traefik certificate store
     # secrets:                                                                                                                                                  # Mount the defined secret into the container (usually under /run/secrets/)
     #   - APP_PASSWORD
@@ -115,7 +115,7 @@ services:
     # --- DEPENDENCIES
     ######################################################################
     depends_on:                                                                                                                                                 # Ensure these services are healthy before starting this one
-      traefik:
+      app:
         condition: service_healthy
 
     ######################################################################
