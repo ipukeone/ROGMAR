@@ -44,10 +44,6 @@ http:
           - X-authentik-meta-app
           - X-authentik-meta-version
 
-
-  ######################################################################
-  # GLOBAL MIDDLEWARES
-  ######################################################################
     ###################################
     # ONLY ALLOW LOCAL NETWORKS
     ###################################
@@ -59,6 +55,10 @@ http:
           - 172.16.0.0/12                                                                                                                                       # 16 contiguous class B networks
           - 192.168.0.0/16                                                                                                                                      # 256 contiguous class C networks
 
+
+  ######################################################################
+  # GLOBAL MIDDLEWARES
+  ######################################################################
     ###################################
     # RATE LIMITING
     ###################################
@@ -67,17 +67,6 @@ http:
         average: 50                                                                                                                                             # average is the maximum rate, by default in requests per second, allowed from a given source
         period: 1                                                                                                                                               # period, in combination with average, defines the actual maximum rate, such as r = average / period
         burst: 100                                                                                                                                              # burst is the maximum number of requests allowed to go through in the same arbitrarily small period of time
-
-    ###################################
-    # BUFFERING
-    ###################################
-    global-buffering-limit:
-      buffering:
-        maxRequestBodyBytes: 0                                                                                                                                  # The maxRequestBodyBytes option configures the maximum allowed body size for the request (in bytes). If the request exceeds the allowed size, it is not forwarded to the service, and the client gets a 413 (Request Entity Too Large) response
-        memRequestBodyBytes: 1073741824                                                                                                                         # You can configure a threshold (in bytes) from which the request will be buffered on disk instead of in memory with the memRequestBodyBytes option
-        maxResponseBodyBytes: 0                                                                                                                                 # The maxResponseBodyBytes option configures the maximum allowed response size from the service (in bytes). If the response exceeds the allowed size, it is not forwarded to the client. The client gets a 500 (Internal Server Error) response instead
-        memResponseBodyBytes: 1073741824                                                                                                                        # You can configure a threshold (in bytes) from which the response will be buffered on disk instead of in memory with the memResponseBodyBytes option
-        retryExpression: "IsNetworkError() && Attempts() < 2"                                                                                                   # You can have the Buffering middleware replay the request using retryExpression
 
     ###################################
     # SECURITY HEADERS
