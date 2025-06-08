@@ -47,7 +47,7 @@ http:
     ###################################
     # ONLY ALLOW LOCAL NETWORKS
     ###################################
-    global-local-IPAllowList:
+    local-IPAllowList:
       IPAllowList:
         sourceRange:
           - 127.0.0.1/32                                                                                                                                        # localhost
