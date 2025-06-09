@@ -38,6 +38,7 @@ services:
     tmpfs:                                                                                                                                                      # Ephemeral storage in RAM, auto-cleared on restart
       - /run                                                                                                                                                    # Mount /run as tmpfs for runtime files (PID files, sockets, etc.)
       - /tmp                                                                                                                                                    # Mount /tmp as tmpfs for temporary files; faster and auto-cleared on restart
+      - /wiki/data/cache                                                                                                                                        # Wiki.js cache directory
 
     ######################################################################
     # --- FILESYSTEM & SECRETS
@@ -47,7 +48,6 @@ services:
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
       - ./appdata/data:/wiki/data/content:rw                                                                                                                    # Content data
       - ./appdata/uploads:/wiki/data/uploads:rw                                                                                                                 # Uploads
-      - ./appdata/cache:/wiki/data/cache:rw                                                                                                                     # Cache
     secrets:                                                                                                                                                    # Mount the defined secret into the container (usually under /run/secrets/)
       - POSTGRES_PASSWORD
 
