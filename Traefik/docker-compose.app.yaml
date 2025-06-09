@@ -57,7 +57,7 @@ services:
     ######################################################################
     labels:                                                                                                                                                     # Metadata for the container, often used for service discovery or reverse proxy rules (e.g., Traefik)
       - "traefik.enable=true"                                                                                                                                   # Enable Traefik reverse proxy routing for this container
-      - "traefik.http.routers.${APP_NAME}-rtr.rule=HostRegexp(`^(${TRAEFIK_SUBDOMAIN})\\.${TRAEFIK_DOMAIN}$`) || HostRegexp(`^(${TRAEFIK_SUBDOMAIN_1:-})\\.${TRAEFIK_DOMAIN_1:-}$`) || HostRegexp(`^(${TRAEFIK_SUBDOMAIN_2:-})\\.${TRAEFIK_DOMAIN_2:-}$`)"
+      - "traefik.http.routers.${APP_NAME}-rtr.rule=${TRAEFIK_HOST}"                                                                                             # Traefik router
       - "traefik.http.services.${APP_NAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT:?Port required}"                                                         # Internal container port
       - "traefik.http.routers.${APP_NAME}-rtr.middlewares=authentik-proxy@file"                                                                                 # Optional Middlewares: Authentik proxy authentication
     ports:                                                                                                                                                      # Optional: exposed ports
@@ -106,12 +106,6 @@ services:
       # Generate a wildcard domain certificate
       - --entrypoints.websecure.http.tls=true
       - --entrypoints.websecure.http.tls.certResolver=${CERTRESOLVER}
-      - --entrypoints.websecure.http.tls.domains[0].main=${TRAEFIK_DOMAIN}
-      - --entrypoints.websecure.http.tls.domains[0].sans=${TRAEFIK_DOMAIN_SANS}
-      - --entrypoints.websecure.http.tls.domains[1].main=${TRAEFIK_DOMAIN_1:-}
-      - --entrypoints.websecure.http.tls.domains[1].sans=${TRAEFIK_DOMAIN_1_SANS:-}
-      - --entrypoints.websecure.http.tls.domains[2].main=${TRAEFIK_DOMAIN_2:-}
-      - --entrypoints.websecure.http.tls.domains[2].sans=${TRAEFIK_DOMAIN_2_SANS:-}
       # Enable default TLS options for all routers
       - --entrypoints.websecure.http.tls.options=${TLSOPTIONS}
       # Enable default middlewares for all routers
