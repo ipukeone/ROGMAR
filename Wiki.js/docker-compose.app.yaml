@@ -76,7 +76,7 @@ services:
       DB_TYPE: postgres
       DB_HOST: ${APP_NAME}-postgresql
       DB_PORT: 5432
-      DB_PASS: /run/secrets/POSTGRES_PASSWORD
+      DB_PASS_FILE: /run/secrets/POSTGRES_PASSWORD
       DB_USER: ${APP_NAME}
       DB_NAME: ${APP_NAME}
     logging:                                                                                                                                                    # Configure log driver and limits to control log size and rotation
@@ -85,7 +85,7 @@ services:
         max-size: "10m"                                                                                                                                         # Max log file size before rotation
         max-file: "3"                                                                                                                                           # Keep up to 3 rotated log files
     healthcheck:                                                                                                                                                # Periodic container health check to ensure service availability
-      test: ['CMD', 'curl', '-f', 'http://localhost/health']                                                                                                    # Command to test container health
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/healthz']                                                                                              # Command to test container health
       interval: 30s                                                                                                                                             # Time between checks
       timeout: 5s                                                                                                                                               # Time to wait for response
       retries: 3                                                                                                                                                # Number of retries before marking unhealthy
