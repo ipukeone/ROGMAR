@@ -1,5 +1,0 @@
-# Dockerfile
-FROM ghcr.io/requarks/wiki
-
-# Remove the default volume - not redefining it removes it
-# No additional commands needed

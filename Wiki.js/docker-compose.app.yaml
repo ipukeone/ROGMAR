@@ -9,13 +9,13 @@ services:
     ######################################################################
     # --- CONTAINER BASICS
     ######################################################################
-    # image: ${IMAGE:?Image required}
+    image: ${IMAGE:?Image required}
     container_name: ${APP_NAME:?App name required}
     hostname: ${APP_NAME}
     restart: unless-stopped                                                                                                                                     # Automatically restart unless manually stopped
-    build:                                                                                                                                                      # Optional: build image from local Dockerfile
-      context: ./dockerfiles
-      dockerfile: dockerfile.wikijs
+    # build:                                                                                                                                                    # Optional: build image from local Dockerfile
+    #   context: .
+    #   dockerfile: Dockerfile
 
     ######################################################################
     # --- SECURITY SETTINGS
@@ -45,7 +45,9 @@ services:
     volumes:                                                                                                                                                    # Mount external storage or host directories into the container for persistent data or config
       - /etc/localtime:/etc/localtime:ro                                                                                                                        # Set container time to host time
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
-      - data:/wiki/data:rw                                                                                                                                      # App data volume (adjust as needed)
+      - ./appdata/data:/wiki/data/content:rw                                                                                                                    # Content data
+      - ./appdata/uploads:/wiki/data/uploads:rw                                                                                                                 # Uploads
+      - ./appdata/cache:/wiki/data/cache:rw                                                                                                                     # Cache
     secrets:                                                                                                                                                    # Mount the defined secret into the container (usually under /run/secrets/)
       - POSTGRES_PASSWORD
 
@@ -109,9 +111,9 @@ services:
     #     soft: 65535                                                                                                                                           # Soft limit: default max open files a process can have
     #     hard: 65535                                                                                                                                           # Hard limit: maximum value the soft limit can be raised to by privileged processes
 
-volumes:
-  data:
-    driver: local
+# volumes:
+#   data:
+#     driver: local
 
 # secrets:                                                                                                                                                      # Define sensitive data (like passwords, tokens, keys) securely and inject into services at runtime
 #   APP_PASSWORD:
