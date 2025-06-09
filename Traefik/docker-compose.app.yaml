@@ -47,8 +47,8 @@ services:
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
       - ./appdata/config/middlewares.yaml:/etc/traefik/conf.d/middlewares.yaml:ro                                                                               # Traefik middlewares
       - ./appdata/config/tls-opts.yaml:/etc/traefik/conf.d/tls-opts.yaml:ro                                                                                     # Traefik TLS config
-      - ./appdata/config/conf.d/:/etc/traefik/conf.d/rules/:ro                                                                                                  # Traefik file routers
-      - ./appdata/config/certs/:/var/traefik/certs/:rw                                                                                                          # Traefik certificate store
+      - ./appdata/config/conf.d:/etc/traefik/conf.d/rules:ro                                                                                                    # Traefik file routers
+      - ./appdata/config/certs:/var/traefik/certs:rw                                                                                                            # Traefik certificate store
     secrets:                                                                                                                                                    # Mount the defined secret into the container (usually under /run/secrets/)
       - CF_DNS_API_TOKEN
 
