@@ -9,13 +9,13 @@ services:
     ######################################################################
     # --- CONTAINER BASICS
     ######################################################################
-    image: ${IMAGE:?Image required}
+    # image: ${IMAGE:?Image required}
     container_name: ${APP_NAME:?App name required}
     hostname: ${APP_NAME}
     restart: unless-stopped                                                                                                                                     # Automatically restart unless manually stopped
-    # build:                                                                                                                                                    # Optional: build image from local Dockerfile
-    #   context: .
-    #   dockerfile: Dockerfile
+    build:                                                                                                                                                      # Optional: build image from local Dockerfile
+      context: ./dockerfiles
+      dockerfile: dockerfile.wikijs
 
     ######################################################################
     # --- SECURITY SETTINGS
@@ -45,7 +45,7 @@ services:
     volumes:                                                                                                                                                    # Mount external storage or host directories into the container for persistent data or config
       - /etc/localtime:/etc/localtime:ro                                                                                                                        # Set container time to host time
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
-      - data:/wiki/data/content:rw                                                                                                                              # App data volume (adjust as needed)
+      - data:/wiki/data:rw                                                                                                                                      # App data volume (adjust as needed)
     secrets:                                                                                                                                                    # Mount the defined secret into the container (usually under /run/secrets/)
       - POSTGRES_PASSWORD
 

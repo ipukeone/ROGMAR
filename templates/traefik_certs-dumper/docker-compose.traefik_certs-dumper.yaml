@@ -10,7 +10,7 @@ services:
     restart: unless-stopped                                                                                                                                     # Automatically restart unless manually stopped
     build:                                                                                                                                                      # Optional: build image from local Dockerfile
       context: ./dockerfiles
-      dockerfile: Dockerfile.traefik-certs-dumper.scp
+      dockerfile: dockerfile.traefik-certs-dumper.scp
 
     ######################################################################
     # --- SECURITY SETTINGS
