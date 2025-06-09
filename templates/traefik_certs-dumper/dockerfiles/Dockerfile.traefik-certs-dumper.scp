@@ -1,0 +1,4 @@
+FROM ldez/traefik-certs-dumper
+
+# Install only scp (via openssh-client, no daemon)
+RUN apk add --no-cache openssh-client

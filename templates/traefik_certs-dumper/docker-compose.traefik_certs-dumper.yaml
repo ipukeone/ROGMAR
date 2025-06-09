@@ -4,13 +4,13 @@ services:
     ######################################################################
     # --- CONTAINER BASICS
     ######################################################################
-    image: ${TRAEFIK_CERTS_DUMPER_IMAGE:?Image required}
+    # image: ${TRAEFIK_CERTS_DUMPER_IMAGE:?Image required}
     container_name: ${APP_NAME:?App name required}-certs-dumper
     hostname: ${APP_NAME}-certs-dumper
     restart: unless-stopped                                                                                                                                     # Automatically restart unless manually stopped
-    # build:                                                                                                                                                    # Optional: build image from local Dockerfile
-    #   context: .
-    #   dockerfile: Dockerfile
+    build:                                                                                                                                                      # Optional: build image from local Dockerfile
+      context: ./dockerfiles
+      dockerfile: Dockerfile.traefik-certs-dumper.scp
 
     ######################################################################
     # --- SECURITY SETTINGS
