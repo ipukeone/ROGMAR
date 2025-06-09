@@ -76,6 +76,7 @@ services:
       POSTGRES_USER: ${APP_NAME}
       POSTGRES_DB: ${APP_NAME}
       POSTGRES_PASSWORD_FILE: /run/secrets/POSTGRES_PASSWORD
+      DB_HOST: ${APP_NAME}-postgresql
     logging:                                                                                                                                                    # Configure log driver and limits to control log size and rotation
       driver: "json-file"
       options:
