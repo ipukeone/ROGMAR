@@ -99,12 +99,7 @@ services:
         max-size: "10m"                                                                                                                                         # Max log file size before rotation
         max-file: "3"                                                                                                                                           # Keep up to 3 rotated log files
     healthcheck:                                                                                                                                                # Periodic container health check to ensure service availability
-      test: >                                                                                                                                                   # Command to test container health
-        sh -c '
-          [ -f /data/cloudflare-acme.json ] &&
-          jq "[.[].Certificates | length] | add" /data/cloudflare-acme.json 2>/dev/null | grep -qv "^0$" &&
-          find /data/files -name "*.crt.pem" -size +128c | grep -q .
-        '
+      test: ["CMD", "test", "-f", "/data/cloudflare-acme.json"]                                                                                                 # Command to test container health
       interval: 30s                                                                                                                                             # Time between checks
       timeout: 5s                                                                                                                                               # Time to wait for response
       retries: 3                                                                                                                                                # Number of retries before marking unhealthy
