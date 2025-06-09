@@ -1,17 +1,14 @@
 #########################################################################################################
 # ROUTERS
 # Replace all "template" with your "app" name!
-# Adjust the HostRexexp.
-# Single subdomain = HostRegexp(`^((template\.prd))\.{{env "TRAEFIK_DOMAIN"}}$`)
-# Multiple subdomains = HostRegexp(`^(((template|template2|template3)\.it)|(template4\.sub)|(template5))\.{{env "TRAEFIK_DOMAIN"}}$`)
 #########################################################################################################
 http:
   routers:
     template-rtr:                                                                                                                                               # Adjust the router name (e.g. [HOSTNAME]-rtr)
       rule: >                                                                                                                                                   # Adjust the [HOSTNAME]
-        HostRegexp(`^((template\.prd))\.{{env "TRAEFIK_DOMAIN"}}$`)
-      # || HostRegexp(`^(((template|template2)\.it))\.{{env "TRAEFIK_DOMAIN_1"}}$`)
-      # || HostRegexp(`^(((template|template2)\.it))\.{{env "TRAEFIK_DOMAIN_2"}}$`)
+        Host(`template.{{env "TRAEFIK_DOMAIN"}}`)
+      # || Host(`sub.{{env "TRAEFIK_DOMAIN_1"}}`)
+      # || Host(`sub.{{env "TRAEFIK_DOMAIN_2"}}`)
       # middlewares:                                                                                                                                            # Optional: Add specific middlewares to this router
       #   - middleware@file
       service: template-svc                                                                                                                                     # Adjust the service name (e.g. [HOSTNAME]-svc)

@@ -2,9 +2,9 @@ http:
   routers:
     pve-rtr:                                                                                                                                                    # Adjust the router name (e.g. [HOSTNAME]-rtr)
       rule: >                                                                                                                                                   # Adjust the [HOSTNAME]
-        HostRegexp(`^((pve\.prd))\.{{env "TRAEFIK_DOMAIN"}}$`)
-      # || HostRegexp(`^(((template|template2)\.it))\.{{env "TRAEFIK_DOMAIN_1"}}$`)
-      # || HostRegexp(`^(((template|template2)\.it))\.{{env "TRAEFIK_DOMAIN_2"}}$`)
+        Host(`pve.{{env "TRAEFIK_DOMAIN"}}`)
+      # || Host(`sub.{{env "TRAEFIK_DOMAIN_1"}}`)
+      # || Host(`sub.{{env "TRAEFIK_DOMAIN_2"}}`)
       # middlewares:                                                                                                                                            # Optional: Add specific middlewares to this router
       #   - middleware@file
       service: pve-svc                                                                                                                                          # Adjust the service name (e.g. [HOSTNAME]-svc)

@@ -2,12 +2,9 @@ http:
   routers:
     mailcow-rtr:                                                                                                                                                # Adjust the router name (e.g. [HOSTNAME]-rtr)
       rule: >                                                                                                                                                   # Adjust the [HOSTNAME]
-        Host(`mailcow.{{env \"TRAEFIK_DOMAIN\"}}`)
-      # || Host(`sub.{{env \"TRAEFIK_DOMAIN_1\"}}`)
-      # || Host(`sub.{{env \"TRAEFIK_DOMAIN_2\"}}`)
-      entryPoints:
-        - websecure
-      tls: true
+        Host(`mailcow.{{env "TRAEFIK_DOMAIN"}}`)
+      # || Host(`sub.{{env "TRAEFIK_DOMAIN_1"}}`)
+      # || Host(`sub.{{env "TRAEFIK_DOMAIN_2"}}`)
       # middlewares:                                                                                                                                            # Optional: Add specific middlewares to this router
       #   - middleware@file
       service: mailcow-svc                                                                                                                                      # Adjust the service name (e.g. [HOSTNAME]-svc)
