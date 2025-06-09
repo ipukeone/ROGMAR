@@ -46,8 +46,8 @@ services:
       - /etc/localtime:/etc/localtime:ro                                                                                                                        # Set container time to host time
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
       - data:/wiki/data/content:rw                                                                                                                              # App data volume (adjust as needed)
-    # secrets:                                                                                                                                                  # Mount the defined secret into the container (usually under /run/secrets/)
-    #   - APP_PASSWORD
+    secrets:                                                                                                                                                    # Mount the defined secret into the container (usually under /run/secrets/)
+      - POSTGRES_PASSWORD
 
     ######################################################################
     # --- NETWORKING / REVERSE PROXY
