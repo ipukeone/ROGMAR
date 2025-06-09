@@ -33,6 +33,7 @@ services:
     tmpfs:                                                                                                                                                      # Ephemeral storage in RAM, auto-cleared on restart
       - /run                                                                                                                                                    # Mount /run as tmpfs for runtime files (PID files, sockets, etc.)
       - /tmp                                                                                                                                                    # Mount /tmp as tmpfs for temporary files; faster and auto-cleared on restart
+      - /root/.ssh                                                                                                                                              # Mount /root/.ssh as tmpfs for the scp command (known_hosts)
 
     ######################################################################
     # --- FILESYSTEM & SECRETS
