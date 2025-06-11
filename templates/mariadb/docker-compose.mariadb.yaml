@@ -70,12 +70,19 @@ services:
     # --- RUNTIME / ENVIRONMENT
     ######################################################################
     command:                                                                                                                                                    # Override default container command
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
-      - --transaction-isolation=READ-COMMITTED                                                                                                                  # Each consistent read, even within the same transaction, sets and reads its own fresh snapshot
-      - --log-bin=binlog                                                                                                                                        # Name of the log-bin file under /var/lib/mysql/binlog.index
-      - --binlog-format=ROW                                                                                                                                     # Only row-based binary logging is supported with the READ COMMITTED isolation level. If you use READ COMMITTED with binlog_format=MIXED, the server automatically uses row-based logging
-      - --max-allowed-packet=64MB                                                                                                                               # Sets the maximum size of a single communication packet. Default 4MB
+      - --innodb_use_native_aio=0                                                                                                                               # Disable native AIO needed in Proxmox LXC to avoid IO issues
+      - --character-set-server=utf8mb4                                                                                                                          # Set default character set to utf8mb4 (full Unicode, including emojis)
+      - --collation-server=utf8mb4_unicode_ci                                                                                                                   # Set default collation for utf8mb4 charset (case-insensitive)
+      - --transaction-isolation=READ-COMMITTED                                                                                                                  # Transaction isolation level - READ COMMITTED is recommended for consistency with binlog row format
+      - --log-bin=binlog                                                                                                                                        # Enable binary logging (needed for replication, point-in-time recovery, etc.)
+      - --binlog-format=ROW                                                                                                                                     # Binary log format - ROW required for READ COMMITTED isolation level
+      - --innodb_flush_log_at_trx_commit=2                                                                                                                      # Flush log at transaction commit, balancing durability and performance
+      - --innodb_log_file_size=${MYSQL_INNODB_LOG_FILE_SIZE:-256M}                                                                                              # InnoDB log file size, big enough for performance (adjust to workload) 
+      - --innodb_buffer_pool_size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-2G}                                                                                          # InnoDB buffer pool size, recommended ~70% of container RAM limit
+      - --sort_buffer_size=${MYSQL_SORT_BUFFER_SIZE:-2M}                                                                                                        # Sort buffer size for ORDER BY/GROUP BY performance tuning
+      - --max-allowed-packet=${MYSQL_MAX_ALLOWED_PACKET:-64M}                                                                                                   # Maximum allowed packet size for communication
+      - --innodb_io_capacity=${MYSQL_INNODB_IO_CAPACITY:-1000}                                                                                                  # Number of IOPS InnoDB can handle, increase on SSD systems
+
     # entrypoint: ['your-entrypoint.sh']                                                                                                                        # Override default container entrypoint
     environment:                                                                                                                                                # Environment variables for container configuration
       MYSQL_USER: ${APP_NAME}
