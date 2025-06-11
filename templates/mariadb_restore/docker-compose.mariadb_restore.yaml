@@ -1,13 +1,19 @@
 ---
+x-required-anchors:
+  tmpfs: &mariadb_common_tmpfs
+    - tmpfs
+  secrets: &mariadb_common_secrets
+    - secrets
+
 services:
-  mariadb:
+  mariadb_restore:
     ######################################################################
     # --- CONTAINER BASICS
     ######################################################################
     image: ${MARIADB_IMAGE:?Image required}
-    container_name: ${APP_NAME:?App name required}-mariadb
-    hostname: ${APP_NAME}-mariadb
-    restart: unless-stopped                                                                                                                                     # Automatically restart unless manually stopped
+    container_name: ${APP_NAME:?App name required}-mariadb_restore
+    hostname: ${APP_NAME}-mariadb_restore
+    restart: no                                                                                                                                                 # Automatically restart unless manually stopped
     # build:                                                                                                                                                    # Optional: build image from local Dockerfile
     #   context: .
     #   dockerfile: Dockerfile
@@ -32,10 +38,7 @@ services:
     init: true                                                                                                                                                  # PID 1 is tini – handles zombies properly
     stop_grace_period: 30s                                                                                                                                      # Give app time to shut down gracefully
     oom_score_adj: -500                                                                                                                                         # Reduce likelihood of getting killed under memory pressure
-    tmpfs: &mariadb_common_tmpfs                                                                                                                                # Ephemeral storage in RAM, auto-cleared on restart
-      - /run                                                                                                                                                    # Mount /run as tmpfs for runtime files (PID files, sockets, etc.)
-      - /tmp                                                                                                                                                    # Mount /tmp as tmpfs for temporary files; faster and auto-cleared on restart
-      - /run/mysqld
+    tmpfs: *mariadb_common_tmpfs                                                                                                                                # Ephemeral storage in RAM, auto-cleared on restart
 
     ######################################################################
     # --- FILESYSTEM & SECRETS
@@ -44,9 +47,9 @@ services:
       - /etc/localtime:/etc/localtime:ro                                                                                                                        # Set container time to host time
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
       - database:/var/lib/mysql:rw                                                                                                                              # App data volume (adjust as needed)
-    secrets: &mariadb_common_secrets                                                                                                                            # Mount the defined secret into the container (usually under /run/secrets/)
-      - MYSQL_PASSWORD
-      - MYSQL_ROOT_PASSWORD
+      - ./scripts/restore-cron.sh:/scripts/restore-cron.sh:ro                                                                                                   # Script to do restore
+      - ./restore:/restore                                                                                                                                      # Restore folder
+    secrets: *mariadb_common_secrets                                                                                                                            # Mount the defined secret into the container (usually under /run/secrets/)
 
     ######################################################################
     # --- NETWORKING / REVERSE PROXY
@@ -69,20 +72,15 @@ services:
     ######################################################################
     # --- RUNTIME / ENVIRONMENT
     ######################################################################
-    command:                                                                                                                                                    # Override default container command
-      - --character-set-server=utf8mb4
-      - --collation-server=utf8mb4_unicode_ci
-      - --transaction-isolation=READ-COMMITTED                                                                                                                  # Each consistent read, even within the same transaction, sets and reads its own fresh snapshot
-      - --log-bin=binlog                                                                                                                                        # Name of the log-bin file under /var/lib/mysql/binlog.index
-      - --binlog-format=ROW                                                                                                                                     # Only row-based binary logging is supported with the READ COMMITTED isolation level. If you use READ COMMITTED with binlog_format=MIXED, the server automatically uses row-based logging
-      - --max-allowed-packet=64MB                                                                                                                               # Sets the maximum size of a single communication packet. Default 4MB
-    # entrypoint: ['your-entrypoint.sh']                                                                                                                        # Override default container entrypoint
+    # command: ['your', 'default', 'command']                                                                                                                   # Override default container command
+    entrypoint: ["sh", "-c", "/scripts/restore-cron.sh"]                                                                                                        # Override default container entrypoint
     environment:                                                                                                                                                # Environment variables for container configuration
       MYSQL_USER: ${APP_NAME}
       MYSQL_DATABASE: ${APP_NAME}
       MYSQL_AUTO_UPGRADE: true
       MYSQL_PASSWORD_FILE: /run/secrets/MYSQL_PASSWORD
       MYSQL_ROOT_PASSWORD_FILE: /run/secrets/MYSQL_ROOT_PASSWORD
+      MYSQL_DB_HOST: ${APP_NAME}-mariadb
     logging:                                                                                                                                                    # Configure log driver and limits to control log size and rotation
       driver: "json-file"
       options:
@@ -100,11 +98,9 @@ services:
     ######################################################################
     # --- DEPENDENCIES
     ######################################################################
-    # depends_on:                                                                                                                                               # Ensure these services are healthy before starting this one
-    #   mariadb:
-    #     condition: service_healthy
-    #   redis:
-    #     condition: service_healthy
+    depends_on:                                                                                                                                                 # Ensure these services are healthy before starting this one
+      mariadb:
+        condition: service_healthy
 
     ######################################################################
     # --- SYSTEM LIMITS
