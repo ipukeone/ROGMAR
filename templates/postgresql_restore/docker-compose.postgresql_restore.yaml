@@ -46,7 +46,7 @@ services:
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
       - database:/var/lib/postgresql/data:rw                                                                                                                    # App data volume (adjust as needed)
       - ./scripts/restore-cron.sh:/scripts/restore-cron.sh:ro                                                                                                   # Script to do restore
-      - ./restore:/restore                                                                                                                                      # Restore folder
+      - ./restore:/restore:rw                                                                                                                                   # Restore folder
     secrets:                                                                                                                                                    # Mount the defined secret into the container (usually under /run/secrets/)
       - POSTGRES_PASSWORD
 
