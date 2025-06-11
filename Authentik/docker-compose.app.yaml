@@ -80,7 +80,7 @@ services:
     ######################################################################
     command: ['server']                                                                                                                                         # Override default container command
     # entrypoint: ['your-entrypoint.sh']                                                                                                                        # Override default container entrypoint
-    environment: &authentik_common_environments                                                                                                                 # Environment variables for container configuration
+    environment: &authentik_common_environment                                                                                                                  # Environment variables for container configuration
       # PostgreSQL
       AUTHENTIK_POSTGRESQL__HOST: ${APP_NAME}-postgresql
       AUTHENTIK_POSTGRESQL__USER: ${APP_NAME}

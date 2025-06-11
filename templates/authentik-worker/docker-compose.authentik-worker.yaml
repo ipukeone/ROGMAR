@@ -4,7 +4,7 @@ x-required-anchors:
     - volumes
   secrets: &authentik_common_secrets
     - secrets
-  environment: &authentik_common_environments
+  environment: &authentik_common_environment
     - environment
 
 services:
@@ -76,7 +76,7 @@ services:
     ######################################################################
     command: ['worker']                                                                                                                                         # Override default container command
     # entrypoint: ['your-entrypoint.sh']                                                                                                                        # Override default container entrypoint
-    environment: *authentik_common_environments                                                                                                                 # Environment variables for container configuration
+    environment: *authentik_common_environment                                                                                                                  # Environment variables for container configuration
     logging:                                                                                                                                                    # Configure log driver and limits to control log size and rotation
       driver: "json-file"
       options:
