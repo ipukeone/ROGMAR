@@ -10,13 +10,13 @@ services:
     ######################################################################
     # --- CONTAINER BASICS
     ######################################################################
-    image: ${MARIADB_IMAGE:?Image required}
+    # image: ${MARIADB_IMAGE:?Image required}
     container_name: ${APP_NAME:?App name required}-mariadb_backup
     hostname: ${APP_NAME}-mariadb_backup
     restart: unless-stopped                                                                                                                                     # Automatically restart unless manually stopped
-    # build:                                                                                                                                                    # Optional: build image from local Dockerfile
-    #   context: .
-    #   dockerfile: Dockerfile
+    build:                                                                                                                                                      # Optional: build image from local Dockerfile
+      context: ./dockerfiles
+      dockerfile: dockerfile.mariadb.lts.mariadb-client
 
     ######################################################################
     # --- SECURITY SETTINGS
@@ -48,7 +48,7 @@ services:
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
       - database:/var/lib/mysql:rw                                                                                                                              # App data volume (adjust as needed)
       - ./scripts/backup-cron.sh:/scripts/backup-cron.sh:ro                                                                                                     # Script to do backup every X hours
-      - ./backup:/backup                                                                                                                                        # Backup folder
+      - ./backup:/backup:rw                                                                                                                                     # Backup folder
     secrets: *mariadb_common_secrets                                                                                                                            # Mount the defined secret into the container (usually under /run/secrets/)
 
     ######################################################################
