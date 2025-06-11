@@ -46,7 +46,7 @@ services:
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
       - database:/var/lib/postgresql/data:rw                                                                                                                    # App data volume (adjust as needed)
       - ./scripts/backup-cron.sh:/scripts/backup-cron.sh:ro                                                                                                     # Script to do backup every X hours
-      - ./backup:/backup
+      - ./backup:/backup                                                                                                                                        # Backup folder
     secrets:                                                                                                                                                    # Mount the defined secret into the container (usually under /run/secrets/)
       - POSTGRES_PASSWORD
 
