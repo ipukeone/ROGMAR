@@ -1,4 +1,0 @@
-FROM mariadb:lts
-
-# Install MariaDB client tools (including mysqldump)
-RUN apk add --no-cache mariadb-client
