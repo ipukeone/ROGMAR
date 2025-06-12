@@ -4,6 +4,7 @@ x-required-services:
   - mariadb_backup
   - mariadb_restore
   - espocrm_daemon
+  - espocrm_websocket
 
 services:
   app:
