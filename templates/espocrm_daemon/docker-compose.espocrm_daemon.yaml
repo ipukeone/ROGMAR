@@ -1,18 +1,12 @@
 ---
-x-required-services:
-  - mariadb
-  - mariadb_backup
-  - mariadb_restore
-  - espocrm_daemon
-
 services:
-  app:
+  espocrm_daemon:
     ######################################################################
     # --- CONTAINER BASICS
     ######################################################################
     image: ${IMAGE:?Image required}
-    container_name: ${APP_NAME:?App name required}
-    hostname: ${APP_NAME}
+    container_name: ${APP_NAME:?App name required}-daemon
+    hostname: ${APP_NAME}-daemon
     restart: unless-stopped                                                                                                                                     # Automatically restart unless manually stopped
     # build:                                                                                                                                                    # Optional: build image from local Dockerfile
     #   context: .
@@ -22,14 +16,14 @@ services:
     # --- SECURITY SETTINGS
     ######################################################################
     # user: '1000:1000'                                                                                                                                         # Optional: run as specific non-root user (app user)
-    # read_only: true                                                                                                                                           # Filesystem is read-only except for mounted volumes
+    read_only: true                                                                                                                                             # Filesystem is read-only except for mounted volumes
     cap_drop:                                                                                                                                                   # Drop all capabilities by default
       - ALL
-    cap_add:                                                                                                                                                    # Add only the minimum required capabilities
-      - SETUID                                                                                                                                                  # Allows changing the effective user ID (e.g. during service startup)
-      - SETGID                                                                                                                                                  # Allows changing the effective group ID
-      - CHOWN                                                                                                                                                   # Required to change file ownership, e.g. during file operations
-      - DAC_OVERRIDE                                                                                                                                            # Bypasses file read/write/execute permission checks (Discretionary Access Control)
+    # cap_add:                                                                                                                                                    # Add only the minimum required capabilities
+    #   - SETUID                                                                                                                                                  # Allows changing the effective user ID (e.g. during service startup)
+    #   - SETGID                                                                                                                                                  # Allows changing the effective group ID
+    #   - CHOWN                                                                                                                                                   # Required to change file ownership, e.g. during file operations
+    #   - DAC_OVERRIDE                                                                                                                                            # Bypasses file read/write/execute permission checks (Discretionary Access Control)
     security_opt:
       - no-new-privileges:true                                                                                                                                  # Prevent privilege escalation
 
@@ -50,18 +44,16 @@ services:
       - /etc/localtime:/etc/localtime:ro                                                                                                                        # Set container time to host time
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
       - data:/var/www/html:rw                                                                                                                                   # App data volume (adjust as needed)
-    secrets:                                                                                                                                                    # Mount the defined secret into the container (usually under /run/secrets/)
-      - MYSQL_PASSWORD
-      - REDIS_PASSWORD
-      - ESPOCRM_ADMIN_PASSWORD
+    # secrets:                                                                                                                                                  # Mount the defined secret into the container (usually under /run/secrets/)
+    #   - APP_PASSWORD
 
     ######################################################################
     # --- NETWORKING / REVERSE PROXY
     ######################################################################
-    labels:                                                                                                                                                     # Metadata for the container, often used for service discovery or reverse proxy rules (e.g., Traefik)
-      - "traefik.enable=true"                                                                                                                                   # Enable Traefik reverse proxy routing for this container
-      - "traefik.http.routers.${APP_NAME}-rtr.rule=${TRAEFIK_HOST}"                                                                                             # Traefik router
-      - "traefik.http.services.${APP_NAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT:?Port required}"                                                         # Internal container port
+    # labels:                                                                                                                                                   # Metadata for the container, often used for service discovery or reverse proxy rules (e.g., Traefik)
+    #   - "traefik.enable=true"                                                                                                                                 # Enable Traefik reverse proxy routing for this container
+    #   - "traefik.http.routers.${APP_NAME}-rtr.rule=${TRAEFIK_HOST}"                                                                                           # Traefik router
+    #   - "traefik.http.services.${APP_NAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT:?Port required}"                                                       # Internal container port
     # - "traefik.http.routers.${APP_NAME}-rtr.middlewares=authentik-proxy@file"                                                                                 # Optional Middlewares: Authentik proxy authentication
     # ports:                                                                                                                                                    # Optional: exposed ports
     #   - 8080:80
@@ -69,7 +61,7 @@ services:
     #   - 80
     networks:                                                                                                                                                   # Define which Docker networks the container connects to (controls communication and isolation)
       - backend
-      - frontend
+      # - frontend
     # extra_hosts:                                                                                                                                              # Optional: manual host entries
     #   - "host.docker.internal:host-gateway"
 
@@ -77,27 +69,16 @@ services:
     # --- RUNTIME / ENVIRONMENT
     ######################################################################
     # command: ['your', 'default', 'command']                                                                                                                   # Override default container command
-    entrypoint: >                                                                                                                                               # Override default container entrypoint
-      sh -c '
-        echo "ServerName 127.0.0.1" >> /etc/apache2/apache2.conf &&
-        exec docker-entrypoint.sh apache2-foreground
-      '
-    environment:                                                                                                                                                # Environment variables for container configuration
-      ESPOCRM_DATABASE_HOST: ${APP_NAME}-mariadb
-      ESPOCRM_DATABASE_USER: ${APP_NAME}
-      ESPOCRM_DATABASE_PASSWORD_FILE: /run/secrets/MYSQL_PASSWORD
-      ESPOCRM_REDIS_HOST: ${APP_NAME}-redis
-      ESPOCRM_REDIS_AUTH_FILE: /run/secrets/REDIS_PASSWORD
-      ESPOCRM_ADMIN_USERNAME: ${ESPOCRM_ADMIN_USERNAME}
-      ESPOCRM_ADMIN_PASSWORD_FILE: /run/secrets/ESPOCRM_ADMIN_PASSWORD
-      ESPOCRM_SITE_URL: ${ESPOCRM_SITE_URL}
+    entrypoint: ['docker-daemon.sh']                                                                                                                            # Override default container entrypoint
+    # environment:                                                                                                                                              # Environment variables for container configuration
+    #   ENV_VAR_EXAMPLE: ${ENV_VAR_EXAMPLE}
     logging:                                                                                                                                                    # Configure log driver and limits to control log size and rotation
       driver: "json-file"
       options:
         max-size: "10m"                                                                                                                                         # Max log file size before rotation
         max-file: "3"                                                                                                                                           # Keep up to 3 rotated log files
     healthcheck:                                                                                                                                                # Periodic container health check to ensure service availability
-      test: ['CMD', 'curl', '-f', 'http://localhost/']                                                                                                          # Command to test container health
+      test: ['CMD', 'sh', '-c', 'php -f /var/www/html/cron.php --check']                                                                                        # Command to test container health
       interval: 30s                                                                                                                                             # Time between checks
       timeout: 5s                                                                                                                                               # Time to wait for response
       retries: 3                                                                                                                                                # Number of retries before marking unhealthy
@@ -111,8 +92,8 @@ services:
     depends_on:                                                                                                                                                 # Ensure these services are healthy before starting this one
       mariadb:
         condition: service_healthy
-      # redis:
-      #   condition: service_healthy
+      app:
+        condition: service_healthy
 
     ######################################################################
     # --- SYSTEM LIMITS
@@ -123,16 +104,16 @@ services:
     #     soft: 65535                                                                                                                                           # Soft limit: default max open files a process can have
     #     hard: 65535                                                                                                                                           # Hard limit: maximum value the soft limit can be raised to by privileged processes
 
-volumes:
-  data:
-    driver: local
+# volumes:
+#   data:
+#     driver: local
 
-secrets:                                                                                                                                                        # Define sensitive data (like passwords, tokens, keys) securely and inject into services at runtime
-  ESPOCRM_ADMIN_PASSWORD:
-    file: ${ESPOCRM_PASSWORD_PATH:?Secret Path required}${ESPOCRM_PASSWORD_FILENAME:?Secret Filename required}                                                  # Load secret from external file
+# secrets:                                                                                                                                                      # Define sensitive data (like passwords, tokens, keys) securely and inject into services at runtime
+#   ESPOCRM_ADMIN_PASSWORD:
+#     file: ${ESPOCRM_PASSWORD_PATH:?Secret Path required}${ESPOCRM_PASSWORD_FILENAME:?Secret Filename required}                                                # Load secret from external file
 
 networks:
-  frontend:
-    external: true
+  # frontend:
+  #   external: true
   backend:
     external: true
