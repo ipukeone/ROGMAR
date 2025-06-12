@@ -58,7 +58,7 @@ services:
       - "traefik.enable=true"                                                                                                                                   # Enable Traefik reverse proxy routing for this container
       - "traefik.http.routers.${APP_NAME}-rtr.rule=${TRAEFIK_HOST}"                                                                                             # Traefik router
       - "traefik.http.services.${APP_NAME}-svc.loadBalancer.server.port=${TRAEFIK_PORT:?Port required}"                                                         # Internal container port
-    # - "traefik.http.routers.${APP_NAME}-rtr.middlewares=authentik-proxy@file"                                                                                 # Optional Middlewares: Authentik proxy authentication
+    #   - "traefik.http.routers.${APP_NAME}-rtr.middlewares=authentik-proxy@file"                                                                                 # Optional Middlewares: Authentik proxy authentication
     # ports:                                                                                                                                                    # Optional: exposed ports
     #   - 8080:80
     # expose:                                                                                                                                                   # Optional: expose without publishing
