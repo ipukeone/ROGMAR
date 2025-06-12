@@ -19,11 +19,8 @@ services:
     read_only: true                                                                                                                                             # Filesystem is read-only except for mounted volumes
     cap_drop:                                                                                                                                                   # Drop all capabilities by default
       - ALL
-    # cap_add:                                                                                                                                                    # Add only the minimum required capabilities
-    #   - SETUID                                                                                                                                                  # Allows changing the effective user ID (e.g. during service startup)
-    #   - SETGID                                                                                                                                                  # Allows changing the effective group ID
-    #   - CHOWN                                                                                                                                                   # Required to change file ownership, e.g. during file operations
-    #   - DAC_OVERRIDE                                                                                                                                            # Bypasses file read/write/execute permission checks (Discretionary Access Control)
+    # cap_add:                                                                                                                                                  # Add only the minimum required capabilities
+    #   - 
     security_opt:
       - no-new-privileges:true                                                                                                                                  # Prevent privilege escalation
 
