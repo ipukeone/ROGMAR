@@ -52,7 +52,6 @@ services:
       - data:/var/www/html:rw                                                                                                                                   # App data volume (adjust as needed)
     secrets:                                                                                                                                                    # Mount the defined secret into the container (usually under /run/secrets/)
       - MYSQL_PASSWORD
-      - REDIS_PASSWORD
       - ESPOCRM_ADMIN_PASSWORD
 
     ######################################################################
@@ -86,8 +85,6 @@ services:
       ESPOCRM_DATABASE_HOST: ${APP_NAME}-mariadb
       ESPOCRM_DATABASE_USER: ${APP_NAME}
       ESPOCRM_DATABASE_PASSWORD_FILE: /run/secrets/MYSQL_PASSWORD
-      ESPOCRM_REDIS_HOST: ${APP_NAME}-redis
-      ESPOCRM_REDIS_AUTH_FILE: /run/secrets/REDIS_PASSWORD
       ESPOCRM_ADMIN_USERNAME: ${ESPOCRM_ADMIN_USERNAME}
       ESPOCRM_ADMIN_PASSWORD_FILE: /run/secrets/ESPOCRM_ADMIN_PASSWORD
       ESPOCRM_SITE_URL: ${ESPOCRM_SITE_URL}
@@ -111,8 +108,6 @@ services:
     depends_on:                                                                                                                                                 # Ensure these services are healthy before starting this one
       mariadb:
         condition: service_healthy
-      # redis:
-      #   condition: service_healthy
 
     ######################################################################
     # --- SYSTEM LIMITS
