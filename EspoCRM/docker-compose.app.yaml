@@ -29,6 +29,7 @@ services:
       - SETUID                                                                                                                                                  # Allows changing the effective user ID (e.g. during service startup)
       - SETGID                                                                                                                                                  # Allows changing the effective group ID
       - CHOWN                                                                                                                                                   # Required to change file ownership, e.g. during file operations
+      - FOWNER                                                                                                                                                  # Allows overriding file ownership checks (e.g. needed when preserving timestamps with cp or modifying files not owned by the process)
       - DAC_OVERRIDE                                                                                                                                            # Bypasses file read/write/execute permission checks (Discretionary Access Control)
     security_opt:
       - no-new-privileges:true                                                                                                                                  # Prevent privilege escalation
