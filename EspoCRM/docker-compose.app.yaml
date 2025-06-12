@@ -3,6 +3,7 @@ x-required-services:
   - mariadb
   - mariadb_backup
   - mariadb_restore
+  - redis
 
 services:
   app:
@@ -48,6 +49,8 @@ services:
       - data:/var/www/html:rw                                                                                                                                   # App data volume (adjust as needed)
     secrets:                                                                                                                                                    # Mount the defined secret into the container (usually under /run/secrets/)
       - MYSQL_PASSWORD
+      - REDIS_PASSWORD
+      - ESPOCRM_ADMIN_PASSWORD
 
     ######################################################################
     # --- NETWORKING / REVERSE PROXY
@@ -73,13 +76,14 @@ services:
     # command: ['your', 'default', 'command']                                                                                                                   # Override default container command
     # entrypoint: ['your-entrypoint.sh']                                                                                                                        # Override default container entrypoint
     environment:                                                                                                                                                # Environment variables for container configuration
-      ESPOCRM_DATABASE_HOST: ${APP_NAME}
+      ESPOCRM_DATABASE_HOST: ${APP_NAME}-mariadb
       ESPOCRM_DATABASE_USER: ${APP_NAME}
-      ESPOCRM_DATABASE_PASSWORD: /run/secrets/MYSQL_PASSWORD
+      ESPOCRM_DATABASE_PASSWORD_FILE: /run/secrets/MYSQL_PASSWORD
+      ESPOCRM_REDIS_HOST: ${APP_NAME}-redis
+      ESPOCRM_REDIS_AUTH_FILE: /run/secrets/REDIS_PASSWORD
       ESPOCRM_ADMIN_USERNAME: ${ESPOCRM_ADMIN_USERNAME}
-      ESPOCRM_ADMIN_PASSWORD: ${ESPOCRM_ADMIN_PASSWORD}
+      ESPOCRM_ADMIN_PASSWORD_FILE: /run/secrets/ESPOCRM_ADMIN_PASSWORD
       ESPOCRM_SITE_URL: ${ESPOCRM_SITE_URL}
-    #   APP_PASSWORD_FILE: /run/secrets/APP_PASSWORD 
     logging:                                                                                                                                                    # Configure log driver and limits to control log size and rotation
       driver: "json-file"
       options:
@@ -116,9 +120,9 @@ volumes:
   data:
     driver: local
 
-# secrets:                                                                                                                                                      # Define sensitive data (like passwords, tokens, keys) securely and inject into services at runtime
-#   APP_PASSWORD:
-#     file: ${APP_PASSWORD_PATH:?Secret Path required}${APP_PASSWORD_FILENAME:?Secret Filename required}                                                        # Load secret from external file
+secrets:                                                                                                                                                        # Define sensitive data (like passwords, tokens, keys) securely and inject into services at runtime
+  ESPOCRM_ADMIN_PASSWORD:
+    file: ${ESPOCRM_PASSWORD_PATH:?Secret Path required}${ESPOCRM_PASSWORD_FILENAME:?Secret Filename required}                                                  # Load secret from external file
 
 networks:
   frontend:
