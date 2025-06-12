@@ -53,8 +53,8 @@ services:
     ######################################################################
     labels:                                                                                                                                                     # Metadata for the container, often used for service discovery or reverse proxy rules (e.g., Traefik)
       - "traefik.enable=true"                                                                                                                                   # Enable Traefik reverse proxy routing for this container
-      - "traefik.http.routers.${APP_NAME}-rtr.rule=${TRAEFIK_HOST} && PathPrefix(`/ws`)"                                                                        # Traefik router
-      - "traefik.http.services.${APP_NAME}-svc.loadBalancer.server.port=8080"                                                                                   # Internal container port
+      - "traefik.http.routers.${APP_NAME}-websocket-rtr.rule=${TRAEFIK_HOST} && PathPrefix(`/ws`)"                                                              # Traefik router
+      - "traefik.http.services.${APP_NAME}-websocket-svc.loadBalancer.server.port=8080"                                                                         # Internal container port
     #   - "traefik.http.routers.${APP_NAME}-rtr.middlewares=authentik-proxy@file"                                                                               # Optional Middlewares: Authentik proxy authentication
     # ports:                                                                                                                                                    # Optional: exposed ports
     #   - 8080:80
