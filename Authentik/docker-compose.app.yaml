@@ -26,7 +26,7 @@ services:
     read_only: true                                                                                                                                             # Filesystem is read-only except for mounted volumes
     cap_drop:                                                                                                                                                   # Drop all capabilities by default
       - ALL
-    # cap_add:                                                                                                                                                  # Add needed capabilities
+    # cap_add:                                                                                                                                                  # Add only the minimum required capabilities
     #   - 
     security_opt:
       - no-new-privileges:true                                                                                                                                  # Prevent privilege escalation

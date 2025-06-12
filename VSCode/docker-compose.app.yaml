@@ -22,9 +22,9 @@ services:
     # read_only: true                                                                                                                                           # Filesystem is read-only except for mounted volumes
     cap_drop:                                                                                                                                                   # Drop all capabilities by default
       - ALL
-    cap_add:                                                                                                                                                    # Add needed capabilities
-      - SETUID                                                                                                                                                  # Set user ID
-      - SETGID                                                                                                                                                  # Set group ID
+    cap_add:                                                                                                                                                    # Add only the minimum required capabilities
+      - SETUID                                                                                                                                                  # Allows changing the effective user ID (e.g. during service startup)
+      - SETGID                                                                                                                                                  # Allows changing the effective group ID
     security_opt:
       - no-new-privileges:true                                                                                                                                  # Prevent privilege escalation
 

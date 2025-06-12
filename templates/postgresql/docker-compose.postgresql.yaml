@@ -19,10 +19,10 @@ services:
     read_only: true                                                                                                                                             # Filesystem is read-only except for mounted volumes
     cap_drop:                                                                                                                                                   # Drop all capabilities by default
       - ALL
-    cap_add:                                                                                                                                                    # Add needed capabilities
-      - SETUID                                                                                                                                                  # Set user ID
-      - SETGID                                                                                                                                                  # Set group ID
-      - CHOWN                                                                                                                                                   # Change file ownership
+    cap_add:                                                                                                                                                    # Add only the minimum required capabilities
+      - SETUID                                                                                                                                                  # Allows changing the effective user ID (e.g. during service startup)
+      - SETGID                                                                                                                                                  # Allows changing the effective group ID
+      - CHOWN                                                                                                                                                   # Required to change file ownership, e.g. during file operations
       - FOWNER                                                                                                                                                  # Bypass permission checks on files you own
       - DAC_READ_SEARCH                                                                                                                                         # Bypass file read/search permission checks
     security_opt:
