@@ -1,0 +1,7 @@
+# Minute Hour DayOfMonth Month DayOfWeek Command
+
+# Full backup daily at 00:00 AM
+0 0 * * * /usr/local/bin/backup.sh full
+
+# Inkrementelle Backups stündlich zur vollen Stunde
+0 * * * * /usr/local/bin/backup.sh incremental

@@ -1,0 +1,14 @@
+FROM mariadb:latest
+
+# Install supercronic (minimal)
+RUN set -eux; \
+  apt-get update; \
+  apt-get install -y --no-install-recommends curl ca-certificates; \
+  curl -fsSL -o /usr/local/bin/supercronic https://github.com/aptible/supercronic/releases/latest/download/supercronic-linux-amd64; \
+  chmod +x /usr/local/bin/supercronic; \
+  apt-get purge -y --auto-remove curl; \
+  rm -rf /var/lib/apt/lists/*
+
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+
+USER mysql
