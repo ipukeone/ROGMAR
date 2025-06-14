@@ -1,0 +1,3 @@
+USER=999
+GROUP=999
+DIRECTORIES=backup,restore

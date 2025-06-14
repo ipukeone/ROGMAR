@@ -2,57 +2,107 @@
 set -euo pipefail
 umask 077
 
+MYSQL_ROOT_USER="${MYSQL_ROOT_USER:-root}"
+MYSQL_ROOT_PASSWORD_FILE="${MYSQL_ROOT_PASSWORD_FILE:?MYSQL_ROOT_PASSWORD_FILE is required}"
+MYSQL_DB_HOST="${MYSQL_DB_HOST:-mariadb}"
+MYSQL_RESTORE_DRY_RUN="${MYSQL_RESTORE_DRY_RUN:-false}"
+
 RESTORE_DIR="${RESTORE_DIR:-/restore}"
 LOCK_FILE="/tmp/restore.lock"
-MYSQL_ROOT_PW_FILE="${MYSQL_ROOT_PASSWORD_FILE:?MYSQL_ROOT_PASSWORD_FILE is required}"
 
 cleanup() {
-  if [[ -f "$LOCK_FILE" ]]; then
-    echo "[INFO] Cleaning up: removing lockfile."
-    rm -f "$LOCK_FILE"
-  fi
+  [[ -f "$LOCK_FILE" ]] && rm -f "$LOCK_FILE"
 }
 trap cleanup EXIT INT TERM
 
 is_db_running() {
-  if [[ ! -f "$MYSQL_ROOT_PW_FILE" ]]; then
-    echo "[FATAL] MYSQL_ROOT_PASSWORD secret file not found at $MYSQL_ROOT_PW_FILE"
+  if mariadb-admin ping --silent --host="$MYSQL_DB_HOST" --user="$MYSQL_ROOT_USER" --password="$(<"$MYSQL_ROOT_PASSWORD_FILE")" > /dev/null 2>&1; then
+    echo "[FATAL] MariaDB appears to be running (ping successful). Aborting restore."
     exit 1
-  fi
-
-  local MYSQL_ROOT_PW
-  MYSQL_ROOT_PW="$(<"$MYSQL_ROOT_PW_FILE")"
-
-  if mysqladmin ping --silent --host=127.0.0.1 --user=root --password="$MYSQL_ROOT_PW" > /dev/null 2>&1; then
-    echo "[ERROR] MariaDB appears to be running (ping successful). Aborting restore."
-    return 0
   fi
 
   if pgrep -x mariadbd > /dev/null; then
-    echo "[ERROR] MariaDB process found running. Aborting restore."
-    return 0
+    echo "[FATAL] MariaDB process found running. Aborting restore."
+    exit 1
+  fi
+}
+
+get_restore_chain() {
+  local full_dir
+  full_dir="$(find "$RESTORE_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | grep -E '^[0-9]{8}_[0-9]{2}$' | sort | head -n1 || true)"
+  if [[ -z "$full_dir" ]]; then
+    echo "[FATAL] No full backup found in $RESTORE_DIR"
+    exit 1
   fi
 
-  return 1
+  local chain=("$full_dir")
+  local next_idx=1
+  while :; do
+    local inc_dir="${full_dir}_$(printf '%02d' $next_idx)"
+    if [[ -d "$RESTORE_DIR/$inc_dir" ]]; then
+      chain+=("$inc_dir")
+      ((next_idx++))
+    else
+      break
+    fi
+  done
+
+  # Check for gaps
+  for ((i=1; i<${#chain[@]}; i++)); do
+    local expected="${full_dir}_$(printf '%02d' $i)"
+    if [[ "${chain[$i]}" != "$expected" ]]; then
+      echo "[FATAL] Backup chain inconsistent. Expected $expected, found ${chain[$i]}"
+      exit 1
+    fi
+  done
+
+  printf "%s\n" "${chain[@]}"
+}
+
+decompress_if_needed() {
+  local dir="$1"
+  if find "$dir" -type f -name '*.qp' | grep -q .; then
+    echo "[INFO] Decompressing backup directory: $dir"
+    mariadb-backup --decompress --target-dir="$dir"
+  else
+    echo "[INFO] No compressed files found in $dir"
+  fi
+}
+
+prepare_restore_chain() {
+  local chain=("$@")
+  local full_path="$RESTORE_DIR/${chain[0]}"
+
+  decompress_if_needed "$full_path"
+  echo "[INFO] Preparing FULL backup: $full_path"
+  mariadb-backup --prepare --target-dir="$full_path"
+
+  for ((i=1; i<${#chain[@]}; i++)); do
+    local inc_path="$RESTORE_DIR/${chain[$i]}"
+    decompress_if_needed "$inc_path"
+    echo "[INFO] Preparing INCREMENTAL backup: $inc_path"
+    mariadb-backup --prepare --target-dir="$full_path" --incremental-dir="$inc_path"
+  done
+
+  echo "$full_path"
 }
 
 perform_restore() {
-  echo "[INFO] Starting restore from $RESTORE_DIR"
+  echo "[INFO] Starting automated restore from $RESTORE_DIR"
+  local chain
+  mapfile -t chain < <(get_restore_chain)
+  local ready_dir
+  ready_dir="$(prepare_restore_chain "${chain[@]}")"
 
-  mariabackup --prepare --target-dir="$RESTORE_DIR"
-  if [[ $? -ne 0 ]]; then
-    echo "[ERROR] mariabackup --prepare failed"
-    exit 1
+  if [[ "$MYSQL_RESTORE_DRY_RUN" == "true" ]]; then
+    echo "[INFO] MYSQL_RESTORE_DRY_RUN is enabled. No copy-back performed."
+    return
   fi
 
   rm -rf /var/lib/mysql/*
   echo "[INFO] Deleted old database files in /var/lib/mysql"
 
-  mariabackup --copy-back --target-dir="$RESTORE_DIR"
-  if [[ $? -ne 0 ]]; then
-    echo "[ERROR] mariabackup --copy-back failed"
-    exit 1
-  fi
+  mariadb-backup --copy-back --target-dir="$ready_dir"
 
   sync
   chown -R mysql:mysql /var/lib/mysql
@@ -67,11 +117,7 @@ main() {
     if [[ -f "$LOCK_FILE" ]]; then
       echo "[WARN] Restore lockfile found. Skipping restore to avoid duplicate restore."
     else
-      if is_db_running; then
-        echo "[FATAL] Restore aborted: MariaDB is running. Stop the database before restoring."
-        exit 1
-      fi
-
+      is_db_running
       touch "$LOCK_FILE"
       perform_restore
     fi
@@ -83,5 +129,4 @@ main() {
   exec /usr/local/bin/supercronic "$@"
 }
 
-# main "$@"
 main "/usr/local/bin/backup.cron"

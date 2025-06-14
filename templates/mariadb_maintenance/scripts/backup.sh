@@ -3,103 +3,124 @@ set -euo pipefail
 umask 077
 
 MYSQL_ROOT_USER="${MYSQL_ROOT_USER:-root}"
-MYSQL_ROOT_PW_FILE="${MYSQL_ROOT_PASSWORD_FILE:?MYSQL_ROOT_PASSWORD_FILE is required}"
+MYSQL_ROOT_PASSWORD_FILE="${MYSQL_ROOT_PASSWORD_FILE:?MYSQL_ROOT_PASSWORD_FILE is required}"
 MYSQL_DB_HOST="${MYSQL_DB_HOST:-mariadb}"
 MYSQL_BACKUP_RETENTION_DAYS="${MYSQL_BACKUP_RETENTION_DAYS:-7}"
-MYSQL_COMPRESS_THREADS="${MYSQL_COMPRESS_THREADS:-4}"
-MYSQL_PARALLEL="${MYSQL_PARALLEL:-4}"
+MYSQL_BACKUP_COMPRESS_THREADS="${MYSQL_BACKUP_COMPRESS_THREADS:-4}"
+MYSQL_BACKUP_PARALLEL="${MYSQL_BACKUP_PARALLEL:-4}"
+MYSQL_BACKUP_MIN_FREE_MB="${MYSQL_BACKUP_MIN_FREE_MB:-10240}"
 
 BACKUP_DIR="${BACKUP_DIR:-/backup}"
 LOCK_FILE="/tmp/backup.lock"
-
 BACKUP_TYPE="${1:-full}"
 
-TIMESTAMP="$(date +'%Y%m%d_%H%M%S')"
-TARGET_DIR="$BACKUP_DIR/$BACKUP_TYPE/$TIMESTAMP"
+TODAY="$(date +'%Y%m%d')"
+TARGET_DIR=""
 
 cleanup() {
-  if [[ -f "$LOCK_FILE" ]]; then
-    echo "[INFO] Cleaning up: removing lockfile."
-    rm -f "$LOCK_FILE"
-  fi
+  [[ -f "$LOCK_FILE" ]] && rm -f "$LOCK_FILE"
 }
 trap cleanup EXIT INT TERM
 
 is_db_running() {
-  local MYSQL_ROOT_PW
-  MYSQL_ROOT_PW="$(<"$MYSQL_ROOT_PW_FILE")"
+  mariadb-admin ping --silent --host="$MYSQL_DB_HOST" --user="$MYSQL_ROOT_USER" --password="$(<"$MYSQL_ROOT_PASSWORD_FILE")" > /dev/null 2>&1
+}
 
-  if ! mariadb-admin ping --silent --host="$MYSQL_DB_HOST" --user="$MYSQL_ROOT_USER" --password="$MYSQL_ROOT_PW" > /dev/null 2>&1; then
-    echo "[ERROR] MariaDB is NOT running. Backup requires running DB."
-    return 1
+check_free_space() {
+  local free_mb
+  free_mb=$(df --output=avail -m "$BACKUP_DIR" | tail -n1 | awk '{print $1}')
+  if [[ "$free_mb" -lt "$MYSQL_BACKUP_MIN_FREE_MB" ]]; then
+    echo "[FATAL] Not enough free space: ${free_mb}MB available, ${MYSQL_BACKUP_MIN_FREE_MB}MB required."
+    exit 1
   fi
-  return 0
 }
 
 remove_old_backups() {
-  echo "[INFO] Removing backups older than $MYSQL_BACKUP_RETENTION_DAYS days in $BACKUP_DIR"
+  echo "[INFO] Removing backups older than $MYSQL_BACKUP_RETENTION_DAYS days"
   find "$BACKUP_DIR" -mindepth 2 -maxdepth 2 -type d -mtime +"$MYSQL_BACKUP_RETENTION_DAYS" -exec rm -rf {} +
 }
 
+verify_backup() {
+  echo "[INFO] Verifying $TARGET_DIR"
+  mariadb-backup --prepare --target-dir="$TARGET_DIR" --read-only
+}
+
+next_full_dir() {
+  local count
+  count=$(find "$BACKUP_DIR/full" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | grep "^$TODAY" | wc -l)
+  printf "%s_%02d" "$TODAY" $((count + 1))
+}
+
+next_inc_dir() {
+  local base="$1"
+  local count
+  count=$(find "$BACKUP_DIR/incremental" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | grep "^${base}_" | wc -l)
+  printf "%s_%02d" "$base" $((count + 1))
+}
+
 perform_full_backup() {
-  echo "[INFO] Starting FULL backup at $TARGET_DIR"
+  local dir_name
+  dir_name="$(next_full_dir)"
+  TARGET_DIR="$BACKUP_DIR/full/$dir_name"
   mkdir -p "$TARGET_DIR"
+  echo "[INFO] FULL backup -> $TARGET_DIR"
 
-  mariadb-backup --backup --target-dir="$TARGET_DIR" --host="$MYSQL_DB_HOST" --user="$MYSQL_ROOT_USER" --password="$(<"$MYSQL_ROOT_PW_FILE")" --compress --compress-threads="$MYSQL_COMPRESS_THREADS" --parallel="$MYSQL_PARALLEL"
-  if [[ $? -ne 0 ]]; then
-    echo "[ERROR] mariadb-backup --backup failed"
-    exit 1
-  fi
+  mariadb-backup \
+    --backup \
+    --target-dir="$TARGET_DIR" \
+    --host="$MYSQL_DB_HOST" \
+    --user="$MYSQL_ROOT_USER" \
+    --password="$(<"$MYSQL_ROOT_PASSWORD_FILE")" \
+    --compress \
+    --compress-threads="$MYSQL_BACKUP_COMPRESS_THREADS" \
+    --parallel="$MYSQL_BACKUP_PARALLEL"
 
-  echo "[INFO] FULL backup completed successfully"
+  verify_backup
 }
 
 perform_incremental_backup() {
-  echo "[INFO] Starting INCREMENTAL backup at $TARGET_DIR"
+  local base_name
+  base_name=$(find "$BACKUP_DIR/full" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | tail -n1 || true)
 
-  local last_full_backup
-  last_full_backup=$(find "$BACKUP_DIR/full" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1 || true)
-
-  if [[ -z "$last_full_backup" ]]; then
-    echo "[WARN] No full backup found. Performing full backup instead."
+  if [[ -z "$base_name" ]]; then
+    echo "[WARN] No full backup found, creating full backup instead."
     perform_full_backup
     return
   fi
 
-  local last_inc_backup
-  last_inc_backup=$(find "$BACKUP_DIR/incremental" -mindepth 1 -maxdepth 1 -type d | sort | tail -n 1 || true)
+  local base_dir="$BACKUP_DIR/full/$base_name"
+  local last_inc_dir
+  last_inc_dir=$(find "$BACKUP_DIR/incremental" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | grep "^$base_name" | sort | tail -n1 || true)
 
-  local base_dir
-  if [[ -z "$last_inc_backup" ]]; then
-    base_dir="$last_full_backup"
-  else
-    base_dir="$last_inc_backup"
-  fi
+  [[ -n "$last_inc_dir" ]] && base_dir="$BACKUP_DIR/incremental/$last_inc_dir"
 
+  local inc_name
+  inc_name="$(next_inc_dir "$base_name")"
+  TARGET_DIR="$BACKUP_DIR/incremental/$inc_name"
   mkdir -p "$TARGET_DIR"
-  
-  mariadb-backup --backup --target-dir="$TARGET_DIR" --incremental-basedir="$base_dir" --host="$MYSQL_DB_HOST" --user="$MYSQL_ROOT_USER" --password="$(<"$MYSQL_ROOT_PW_FILE")" --compress --compress-threads="$MYSQL_COMPRESS_THREADS" --parallel="$MYSQL_PARALLEL"
-  if [[ $? -ne 0 ]]; then
-    echo "[ERROR] mariadb-backup --incremental backup failed"
-    exit 1
-  fi
+  echo "[INFO] INCREMENTAL backup -> $TARGET_DIR (base: $base_dir)"
 
-  echo "[INFO] INCREMENTAL backup completed successfully"
+  mariadb-backup \
+    --backup \
+    --target-dir="$TARGET_DIR" \
+    --incremental-basedir="$base_dir" \
+    --host="$MYSQL_DB_HOST" \
+    --user="$MYSQL_ROOT_USER" \
+    --password="$(<"$MYSQL_ROOT_PASSWORD_FILE")" \
+    --compress \
+    --compress-threads="$MYSQL_BACKUP_COMPRESS_THREADS" \
+    --parallel="$MYSQL_BACKUP_PARALLEL"
+
+  verify_backup
 }
 
 main() {
-  if [[ -f "$LOCK_FILE" ]]; then
-    echo "[WARN] Backup lockfile found. Skipping backup to avoid concurrent runs."
-    exit 0
-  fi
-
-  if ! is_db_running; then
-    echo "[FATAL] Backup aborted: MariaDB is not running."
-    exit 1
-  fi
-
+  [[ -f "$LOCK_FILE" ]] && { echo "[WARN] Lockfile found, skipping."; exit 0; }
   touch "$LOCK_FILE"
 
+  is_db_running || { echo "[FATAL] DB not running"; exit 1; }
+
+  check_free_space
   remove_old_backups
 
   case "$BACKUP_TYPE" in
@@ -110,7 +131,7 @@ main() {
       perform_incremental_backup
       ;;
     *)
-      echo "[FATAL] Invalid backup type: $BACKUP_TYPE. Allowed: full, incremental."
+      echo "[FATAL] Invalid backup type: $BACKUP_TYPE"
       exit 1
       ;;
   esac
