@@ -817,6 +817,49 @@ copy_required_services() {
   fi
 }
 
+# Function: set_permissions
+# Sets ownership and permissions (700) recursively on directories.
+# Creates directories if they do not exist.
+# Directories are relative to TARGET_DIR.
+# Respects FORCE flag to re-apply permissions on existing directories.
+# Arguments:
+#   $1 - comma-separated list of directory paths (relative to TARGET_DIR)
+#   $2 - user for ownership
+#   $3 - group for ownership
+# ───────────────────────────────────────────────────────────────────────
+set_permissions() {
+  local dirs="$1"
+  local user="$2"
+  local group="$3"
+  local old_ifs=$IFS
+  IFS=','
+
+  for dir in $dirs; do
+    dir="${dir#"${dir%%[![:space:]]*}"}"
+    dir="${dir%"${dir##*[![:space:]]}"}"
+    dir="$TARGET_DIR/$dir"
+
+    if [[ -d "$dir" ]]; then
+      log_info "Directory $dir already exist. Run with --force to apply the permissions!"
+
+      if [[ "$FORCE" == true ]]; then
+        log_info "Setting ownership ${user}:${group} on $dir"
+        chown -R "${user}:${group}" "$dir" || { log_error "chown failed on $dir"; return 1; }
+
+        log_info "Setting permissions 700 on $dir"
+        chmod -R 700 "$dir" || { log_error "chmod 700 failed on $dir"; return 1; }
+      fi
+    else
+      log_info "Directory $dir does not exist, creating it"
+      ensure_dir_exists "$dir"
+      chown -R "${user}:${group}" "$dir" || { log_error "chown failed on $dir"; return 1; }
+      chmod -R 700 "$dir" || { log_error "chmod 700 failed on $dir"; return 1; }
+    fi
+  done
+
+  IFS=$old_ifs
+}
+
 # Function: pull_docker_images
 # Pull latest docker images from merged compose file and show tag + image ID before and after pull.
 # Arguments:
@@ -1074,10 +1117,18 @@ main() {
     check_dependencies "git yq rsync"
     clone_sparse_checkout "https://github.com/saervices/Docker.git" "main" "templates"
     copy_required_services
+
     if [[ "${INITIAL_RUN:-false}" == true ]]; then
       generate_password "${TARGET_DIR}/secrets" "${GP_LEN}" "${GP_FILE}"
     fi
+    
     make_scripts_executable "${TARGET_DIR}/scripts"
+    if [[ -f "${TARGET_DIR}/scripts/setup.sh" ]]; then
+      log_info "Loading variables from "${TARGET_DIR}/scripts/setup.sh""
+      . "${TARGET_DIR}/scripts/setup.sh"
+      set_permissions "$DIRECTORIES" "$USER" "$GROUP"
+    fi
+
     setup_cleanup_trap
     log_ok "Script completed successfully."
   else
