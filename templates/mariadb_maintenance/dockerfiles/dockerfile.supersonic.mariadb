@@ -9,6 +9,10 @@ RUN set -eux; \
   apt-get purge -y --auto-remove curl; \
   rm -rf /var/lib/apt/lists/*
 
+# Copy your entrypoint, backup script and backup cron
+COPY scripts/* /usr/local/bin/
+RUN chmod +x /usr/local/bin/*
+
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 USER mysql

@@ -79,7 +79,9 @@ main() {
     echo "[INFO] No restore requested. Proceeding to backup schedule."
   fi
 
+  echo "[INFO] Starting supercronic with cron file: $*"
   exec /usr/local/bin/supercronic "$@"
 }
 
-main "$@"
+# main "$@"
+main "/usr/local/bin/backup.cron"

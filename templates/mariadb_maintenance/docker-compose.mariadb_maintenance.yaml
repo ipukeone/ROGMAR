@@ -15,8 +15,8 @@ services:
     hostname: ${APP_NAME}-mariadb_maintenance
     restart: unless-stopped                                                                                                                                     # Automatically restart unless manually stopped
     build:                                                                                                                                                      # Optional: build image from local Dockerfile
-      context: ./dockerfiles
-      dockerfile: dockerfile.supersonic.mariadb
+      context: .
+      dockerfile: dockerfiles/dockerfile.supersonic.mariadb
 
     ######################################################################
     # --- SECURITY SETTINGS
@@ -47,9 +47,8 @@ services:
       - /etc/localtime:/etc/localtime:ro                                                                                                                        # Set container time to host time
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
       - database:/var/lib/mysql:rw                                                                                                                              # App data volume (adjust as needed)
-      - ./scripts/:/usr/local/bin:ro
-      - ./backup:/backup:rw
-      - ./restore:/restore:rw
+      - ./backup:/backup:rw                                                                                                                                     # MySQL backup folder
+      - ./restore:/restore:rw                                                                                                                                   # MySQL restore folder
     secrets: *mariadb_common_secrets                                                                                                                            # Mount the defined secret into the container (usually under /run/secrets/)
 
     ######################################################################
@@ -74,7 +73,7 @@ services:
     # --- RUNTIME / ENVIRONMENT
     ######################################################################
     # command: ['your', 'default', 'command']                                                                                                                   # Override default container command
-    entrypoint: ["/usr/local/bin/supercronic", "/usr/local/bin/backup.cron"]                                                                                    # Override default container entrypoint
+    # entrypoint: ['your-entrypoint.sh']                                                                                                                        # Override default container entrypoint
     environment:                                                                                                                                                # Environment variables for container configuration
       MYSQL_USER: ${APP_NAME}
       MYSQL_DATABASE: ${APP_NAME}
@@ -83,13 +82,15 @@ services:
       MYSQL_ROOT_PASSWORD_FILE: /run/secrets/MYSQL_ROOT_PASSWORD
       MYSQL_DB_HOST: ${APP_NAME}-mariadb
       MYSQL_BACKUP_RETENTION_DAYS: ${MYSQL_BACKUP_RETENTION_DAYS}
+      MYSQL_COMPRESS_THREADS: ${MYSQL_COMPRESS_THREADS}
+      MYSQL_PARALLEL: ${MYSQL_PARALLEL}
     logging:                                                                                                                                                    # Configure log driver and limits to control log size and rotation
       driver: "json-file"
       options:
         max-size: "10m"                                                                                                                                         # Max log file size before rotation
         max-file: "3"                                                                                                                                           # Keep up to 3 rotated log files
     healthcheck:                                                                                                                                                # Periodic container health check to ensure service availability
-      test: ['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized']                                                                                      # Command to test container health
+      test: ["CMD", "sh", "-c", "pgrep supercronic >/dev/null 2>&1"]                                                                                            # Command to test container health
       interval: 30s                                                                                                                                             # Time between checks
       timeout: 5s                                                                                                                                               # Time to wait for response
       retries: 3                                                                                                                                                # Number of retries before marking unhealthy

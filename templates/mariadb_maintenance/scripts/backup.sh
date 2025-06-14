@@ -2,10 +2,15 @@
 set -euo pipefail
 umask 077
 
-BACKUP_DIR="${BACKUP_DIR:-/backup}"
+MYSQL_ROOT_USER="${MYSQL_ROOT_USER:-root}"
 MYSQL_ROOT_PW_FILE="${MYSQL_ROOT_PASSWORD_FILE:?MYSQL_ROOT_PASSWORD_FILE is required}"
-LOCK_FILE="/tmp/backup.lock"
+MYSQL_DB_HOST="${MYSQL_DB_HOST:-mariadb}"
 MYSQL_BACKUP_RETENTION_DAYS="${MYSQL_BACKUP_RETENTION_DAYS:-7}"
+MYSQL_COMPRESS_THREADS="${MYSQL_COMPRESS_THREADS:-4}"
+MYSQL_PARALLEL="${MYSQL_PARALLEL:-4}"
+
+BACKUP_DIR="${BACKUP_DIR:-/backup}"
+LOCK_FILE="/tmp/backup.lock"
 
 BACKUP_TYPE="${1:-full}"
 
@@ -24,7 +29,7 @@ is_db_running() {
   local MYSQL_ROOT_PW
   MYSQL_ROOT_PW="$(<"$MYSQL_ROOT_PW_FILE")"
 
-  if ! mysqladmin ping --silent --host=127.0.0.1 --user=root --password="$MYSQL_ROOT_PW" > /dev/null 2>&1; then
+  if ! mariadb-admin ping --silent --host="$MYSQL_DB_HOST" --user="$MYSQL_ROOT_USER" --password="$MYSQL_ROOT_PW" > /dev/null 2>&1; then
     echo "[ERROR] MariaDB is NOT running. Backup requires running DB."
     return 1
   fi
@@ -40,9 +45,9 @@ perform_full_backup() {
   echo "[INFO] Starting FULL backup at $TARGET_DIR"
   mkdir -p "$TARGET_DIR"
 
-  mariabackup --backup --target-dir="$TARGET_DIR" --user=root --password="$(<"$MYSQL_ROOT_PW_FILE")"
+  mariadb-backup --backup --target-dir="$TARGET_DIR" --host="$MYSQL_DB_HOST" --user="$MYSQL_ROOT_USER" --password="$(<"$MYSQL_ROOT_PW_FILE")" --compress --compress-threads="$MYSQL_COMPRESS_THREADS" --parallel="$MYSQL_PARALLEL"
   if [[ $? -ne 0 ]]; then
-    echo "[ERROR] mariabackup --backup failed"
+    echo "[ERROR] mariadb-backup --backup failed"
     exit 1
   fi
 
@@ -72,10 +77,10 @@ perform_incremental_backup() {
   fi
 
   mkdir -p "$TARGET_DIR"
-
-  mariabackup --backup --target-dir="$TARGET_DIR" --incremental-basedir="$base_dir" --user=root --password="$(<"$MYSQL_ROOT_PW_FILE")"
+  
+  mariadb-backup --backup --target-dir="$TARGET_DIR" --incremental-basedir="$base_dir" --host="$MYSQL_DB_HOST" --user="$MYSQL_ROOT_USER" --password="$(<"$MYSQL_ROOT_PW_FILE")" --compress --compress-threads="$MYSQL_COMPRESS_THREADS" --parallel="$MYSQL_PARALLEL"
   if [[ $? -ne 0 ]]; then
-    echo "[ERROR] mariabackup --incremental backup failed"
+    echo "[ERROR] mariadb-backup --incremental backup failed"
     exit 1
   fi
 
