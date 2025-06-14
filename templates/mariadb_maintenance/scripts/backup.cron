@@ -5,3 +5,6 @@
 
 # Incremental backups hourly on the hour
 0 * * * * /usr/local/bin/backup.sh incremental
+
+# Dump file hourly on the hour
+# 0 * * * * /usr/local/bin/backup.sh dump
