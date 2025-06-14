@@ -793,20 +793,21 @@ copy_required_services() {
     local template_dir="${TMPDIR}/${REPO_SUBFOLDER}"
     local template_compose_file="${template_dir}/${service}/docker-compose.${service}.yaml"
     local template_env_file="${template_dir}/${service}/.env"
+    local targetdir_compose_file="${TARGET_DIR}/docker-compose.${service}.yaml"
 
     log_info "Processing required service: ${MAGENTA}${service}${RESET}"
 
     if [[ "$FORCE" == true ]]; then
-      backup_existing_file "${template_compose_file}" "${backup_dir}"
+      backup_existing_file "${targetdir_compose_file}" "${backup_dir}"
     fi
 
     if [[ "$INITIAL_RUN" == true || "$FORCE" == true ]]; then
       merge_subfolders_from "${template_dir}" "${service}" "${TARGET_DIR}"
       copy_file "${template_compose_file}" "${TARGET_DIR}"
-      process_merge_yaml_file "${template_compose_file}" "${main_compose}"
     fi
 
     process_merge_file "${template_env_file}" "${main_env}" seen_vars
+    process_merge_yaml_file "${targetdir_compose_file}" "${main_compose}"
 
   done
 
@@ -839,21 +840,24 @@ set_permissions() {
     dir="${dir%"${dir##*[![:space:]]}"}"
     dir="$TARGET_DIR/$dir"
 
-    if [[ -d "$dir" ]]; then
-      log_info "Directory $dir already exist. Run with --force to apply the permissions!"
+    if [[ "$FORCE" == true || ! -d "$dir" ]]; then
+      ensure_dir_exists "$dir"
 
-      if [[ "$FORCE" == true ]]; then
-        log_info "Setting ownership ${user}:${group} on $dir"
-        chown -R "${user}:${group}" "$dir" || { log_error "chown failed on $dir"; return 1; }
+      if chown -R "${user}:${group}" "$dir"; then
+         log_info "Setting ownership ${user}:${group} on $dir"
+      else
+        log_error "chown failed on $dir"
+        return 1
+      fi
 
-        log_info "Setting permissions 700 on $dir"
-        chmod -R 700 "$dir" || { log_error "chmod 700 failed on $dir"; return 1; }
+      if chmod -R 700 "$dir"; then
+         log_info "Setting permissions 700 on $dir"
+      else
+        log_error "chmod 700 failed on $dir"
+        return 1
       fi
     else
-      log_info "Directory $dir does not exist, creating it"
-      ensure_dir_exists "$dir"
-      chown -R "${user}:${group}" "$dir" || { log_error "chown failed on $dir"; return 1; }
-      chmod -R 700 "$dir" || { log_error "chmod 700 failed on $dir"; return 1; }
+      log_info "Directory $dir already exist. Run with --force to apply the permissions!"
     fi
   done
 

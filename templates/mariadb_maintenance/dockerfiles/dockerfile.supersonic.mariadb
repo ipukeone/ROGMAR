@@ -1,4 +1,4 @@
-FROM mariadb:latest
+FROM mariadb:lts
 
 # Install supercronic (minimal)
 RUN set -eux; \

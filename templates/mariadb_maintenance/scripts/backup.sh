@@ -3,6 +3,7 @@ set -euo pipefail
 umask 077
 
 MYSQL_ROOT_USER="${MYSQL_ROOT_USER:-root}"
+MYSQL_DATABASE="${MYSQL_DATABASE:?MYSQL_DATABASE is required}"
 MYSQL_ROOT_PASSWORD_FILE="${MYSQL_ROOT_PASSWORD_FILE:?MYSQL_ROOT_PASSWORD_FILE is required}"
 MYSQL_DB_HOST="${MYSQL_DB_HOST:-mariadb}"
 MYSQL_BACKUP_RETENTION_DAYS="${MYSQL_BACKUP_RETENTION_DAYS:-7}"
@@ -18,7 +19,9 @@ TODAY="$(date +'%Y%m%d')"
 TARGET_DIR=""
 
 cleanup() {
-  [[ -f "$LOCK_FILE" ]] && rm -f "$LOCK_FILE"
+  if [[ -f "$LOCK_FILE" ]]; then
+    rm -f "$LOCK_FILE" || echo "[WARN] Could not remove lock file"
+  fi
 }
 trap cleanup EXIT INT TERM
 
@@ -36,8 +39,41 @@ check_free_space() {
 }
 
 remove_old_backups() {
+  echo "[INFO] Checking for recent full backups (safety check)"
+
+  local recent_full_count=0
+
+  if [[ -d "$BACKUP_DIR/full" ]]; then
+    recent_full_count=$(find "$BACKUP_DIR/full" -mindepth 1 -maxdepth 1 -type d -mtime -"${MYSQL_BACKUP_RETENTION_DAYS}" | wc -l)
+  else
+    echo "[WARN] No full backup directory found; assuming no recent full backups exist."
+  fi
+
+  if [[ "$recent_full_count" -eq 0 ]]; then
+    echo "[WARN] No recent full backup found (within last ${MYSQL_BACKUP_RETENTION_DAYS} days)."
+    echo "[INFO] Aborting old backup cleanup to avoid data loss risk."
+    return 0
+  fi
+
   echo "[INFO] Removing backups older than $MYSQL_BACKUP_RETENTION_DAYS days"
-  find "$BACKUP_DIR" -mindepth 2 -maxdepth 2 -type d -mtime +"$MYSQL_BACKUP_RETENTION_DAYS" -exec rm -rf {} +
+
+  if [[ -d "$BACKUP_DIR/full" ]]; then
+    find "$BACKUP_DIR/full" -mindepth 1 -maxdepth 1 -type d -mtime +"$MYSQL_BACKUP_RETENTION_DAYS" -exec rm -rf {} +
+  else
+    echo "[INFO] No full backup directory found; skipping old full backups."
+  fi
+
+  if [[ -d "$BACKUP_DIR/incremental" ]]; then
+    find "$BACKUP_DIR/incremental" -mindepth 1 -maxdepth 1 -type d -mtime +"$MYSQL_BACKUP_RETENTION_DAYS" -exec rm -rf {} +
+  else
+    echo "[INFO] No incremental backup directory found; skipping old incremental backups."
+  fi
+
+  if [[ -d "$BACKUP_DIR/dumps" ]]; then
+    find "$BACKUP_DIR/dumps" -mindepth 1 -maxdepth 1 -type f -mtime +"$MYSQL_BACKUP_RETENTION_DAYS" -exec rm -f {} +
+  else
+    echo "[INFO] No dumps directory found; skipping old dump removal."
+  fi
 }
 
 verify_backup() {
@@ -114,6 +150,25 @@ perform_incremental_backup() {
   verify_backup
 }
 
+perform_dump_backup() {
+  local dump_file="$BACKUP_DIR/dumps/mariadb_dump_${TODAY}_$(date +'%H%M%S').sql.gz"
+  mkdir -p "$BACKUP_DIR/dumps"
+  echo "[INFO] DUMP backup -> $dump_file"
+
+  mariadb-dump \
+    --host="$MYSQL_DB_HOST" \
+    --user="$MYSQL_ROOT_USER" \
+    --password="$(<"$MYSQL_ROOT_PASSWORD_FILE")" \
+    --databases "$MYSQL_DATABASE" \
+    --single-transaction \
+    --routines \
+    --triggers \
+    --set-gtid-purged=OFF \
+  | gzip -9 > "$dump_file"
+
+  echo "[INFO] Dump completed: $dump_file"
+}
+
 main() {
   [[ -f "$LOCK_FILE" ]] && { echo "[WARN] Lockfile found, skipping."; exit 0; }
   touch "$LOCK_FILE"
@@ -129,6 +184,9 @@ main() {
       ;;
     incremental)
       perform_incremental_backup
+      ;;
+    dump)
+      perform_dump_backup
       ;;
     *)
       echo "[FATAL] Invalid backup type: $BACKUP_TYPE"
