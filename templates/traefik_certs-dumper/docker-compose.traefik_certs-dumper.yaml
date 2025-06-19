@@ -86,6 +86,7 @@ services:
           --key-ext=.pem \
           --version v3 \
           --watch \
+          --hook-timeout 30s \
           --source /data/cloudflare-acme.json \
           --dest /data/files \
           --post-hook "sh /config/post-hook.sh"
