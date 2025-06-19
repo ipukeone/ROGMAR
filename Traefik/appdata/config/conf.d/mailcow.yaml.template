@@ -3,8 +3,9 @@ http:
     mailcow-rtr:                                                                                                                                                # Adjust the router name (e.g. [HOSTNAME]-rtr)
       rule: >                                                                                                                                                   # Adjust the [HOSTNAME]
         Host(`mailcow.{{env "TRAEFIK_DOMAIN"}}`)
-      # || Host(`sub.{{env "TRAEFIK_DOMAIN_1"}}`)
-      # || Host(`sub.{{env "TRAEFIK_DOMAIN_2"}}`)
+      #  || (Host(`example.{{env "TRAEFIK_DOMAIN"}}`) && PathPrefix(`/.well-known/acme-challenge/`)) || Host(`example.{{env "TRAEFIK_DOMAIN"}}`) || Host(`autodiscover.{{env "TRAEFIK_DOMAIN"}}`) || Host(`autoconfig.{{env "TRAEFIK_DOMAIN"}}`)
+      #  || Host(`example.{{env "TRAEFIK_DOMAIN_1"}}`) || Host(`example.{{env "TRAEFIK_DOMAIN_1"}}`) || Host(`autodiscover.{{env "TRAEFIK_DOMAIN_1"}}`) || Host(`autoconfig.{{env "TRAEFIK_DOMAIN_1"}}`)
+      #  || Host(`example.{{env "TRAEFIK_DOMAIN_2"}}`) || Host(`example.{{env "TRAEFIK_DOMAIN_2"}}`) || Host(`autodiscover.{{env "TRAEFIK_DOMAIN_2"}}`) || Host(`autoconfig.{{env "TRAEFIK_DOMAIN_2"}}`)
       # middlewares:                                                                                                                                            # Optional: Add specific middlewares to this router
       #   - middleware@file
       service: mailcow-svc                                                                                                                                      # Adjust the service name (e.g. [HOSTNAME]-svc)
@@ -13,4 +14,4 @@ http:
     mailcow-svc:                                                                                                                                                # Adjust the service name to match the service name above
       loadBalancer:
         servers:
-          - url: "https://192.168.20.120/"                                                                                                                      # Adjust the url to your application
+          - url: "http://192.168.20.120/"                                                                                                                       # Adjust the url to your application
