@@ -2,183 +2,235 @@
 set -euo pipefail
 umask 077
 
+# === ENVIRONMENT VARIABLES === #
 MYSQL_ROOT_USER="${MYSQL_ROOT_USER:-root}"
 MYSQL_DATABASE="${MYSQL_DATABASE:?MYSQL_DATABASE is required}"
 MYSQL_ROOT_PASSWORD_FILE="${MYSQL_ROOT_PASSWORD_FILE:?MYSQL_ROOT_PASSWORD_FILE is required}"
 MYSQL_DB_HOST="${MYSQL_DB_HOST:-mariadb}"
 MYSQL_BACKUP_RETENTION_DAYS="${MYSQL_BACKUP_RETENTION_DAYS:-7}"
-MYSQL_BACKUP_COMPRESS_THREADS="${MYSQL_BACKUP_COMPRESS_THREADS:-4}"
-MYSQL_BACKUP_PARALLEL="${MYSQL_BACKUP_PARALLEL:-4}"
-MYSQL_BACKUP_MIN_FREE_MB="${MYSQL_BACKUP_MIN_FREE_MB:-10240}"
 
-BACKUP_DIR="${BACKUP_DIR:-/backup}"
-LOCK_FILE="/tmp/backup.lock"
-BACKUP_TYPE="${1:-full}"
-
+BACKUP_DIR="/backup"
+TMP_DIR="/tmp/mariadb_backup"
 TODAY="$(date +'%Y%m%d')"
-TARGET_DIR=""
+DEBUG="${DEBUG:-true}"
 
-cleanup() {
-  if [[ -f "$LOCK_FILE" ]]; then
-    rm -f "$LOCK_FILE" || echo "[WARN] Could not remove lock file"
+# === LOGGING === #
+log_info()    { echo "[INFO] $*"; }
+log_debug()   { [[ "$DEBUG" == "true" ]] && echo "[DEBUG] $*"; }
+log_error()   { echo "[ERROR] $*" >&2; }
+
+# === CLEANUP TEMP DIR ON EXIT === #
+trap 'rm -rf "$TMP_DIR"; rm -f "$LOCKFILE"' EXIT
+
+# === LOCKFILE === #
+LOCKFILE="/tmp/mariadb_backup.lock"
+
+if [[ -e "$LOCKFILE" ]]; then
+  echo "[ERROR] Another backup process is already running. Lockfile exists: $LOCKFILE"
+  exit 1
+fi
+
+echo "$$" > "$LOCKFILE"
+
+# === FUNCTION: Ensure directory exists and is empty === #
+prepare_tmp_dir() {
+  rm -rf "$TMP_DIR"
+  mkdir -p "$TMP_DIR"
+
+  log_debug "Created $TMP_DIR"
+}
+
+# === FUNCTION: Compress entire folder to .zst with proper naming === #
+compress_backup() {
+  local type="$1"     # full|incremental|dump
+  local suffix="$2"   # e.g., 01 or 01_01
+  local source_dir="${3:-$TMP_DIR}"  # optional: directory to be compressed
+
+  mkdir -p "$BACKUP_DIR/$TODAY"
+
+  local file_name
+  if [[ "$type" == "dump" ]]; then
+    file_name="${type}_${TODAY}_${suffix}.sql.zst"
+  else
+    file_name="${type}_${TODAY}_${suffix}.zst"
   fi
-}
-trap cleanup EXIT INT TERM
 
-is_db_running() {
-  mariadb-admin ping --silent --host="$MYSQL_DB_HOST" --user="$MYSQL_ROOT_USER" --password="$(<"$MYSQL_ROOT_PASSWORD_FILE")" > /dev/null 2>&1
-}
+  log_info "Compressing backup -> $file_name"
 
-check_free_space() {
-  local free_mb
-  free_mb=$(df --output=avail -m "$BACKUP_DIR" | tail -n1 | awk '{print $1}')
-  if [[ "$free_mb" -lt "$MYSQL_BACKUP_MIN_FREE_MB" ]]; then
-    echo "[FATAL] Not enough free space: ${free_mb}MB available, ${MYSQL_BACKUP_MIN_FREE_MB}MB required."
+  tar -cf - -C "$source_dir" . | zstd --rm -q --content-size -o "$BACKUP_DIR/$TODAY/$file_name" || {
+    log_error "Failed to compress backup"
     exit 1
-  fi
+  }
+
+  log_info "Backup saved as $BACKUP_DIR/$TODAY/$file_name"
 }
 
-remove_old_backups() {
-  echo "[INFO] Checking for recent full backups (safety check)"
+# === FUNCTION: Get latest full backup for incremental usage === #
+get_latest_full() {
+  local latest_full
+  latest_full=$(find "$BACKUP_DIR"/"$TODAY"/full_"$TODAY"_*.zst "$BACKUP_DIR"/full_"$TODAY"_*.zst 2>/dev/null \
+    | grep -v '.zst.*.zst' | sort | tail -n1)
 
-  local recent_full_count=0
-
-  if [[ -d "$BACKUP_DIR/full" ]]; then
-    recent_full_count=$(find "$BACKUP_DIR/full" -mindepth 1 -maxdepth 1 -type d -mtime -"${MYSQL_BACKUP_RETENTION_DAYS}" | wc -l)
-  else
-    echo "[WARN] No full backup directory found; assuming no recent full backups exist."
+  if [[ -z "$latest_full" ]]; then
+    latest_full=$(find "$BACKUP_DIR"/*/full_${TODAY}_*.zst "$BACKUP_DIR"/full_${TODAY}_*.zst 2>/dev/null \
+      | grep -v '.zst.*.zst' | sort | tail -n1)
   fi
 
-  if [[ "$recent_full_count" -eq 0 ]]; then
-    echo "[WARN] No recent full backup found (within last ${MYSQL_BACKUP_RETENTION_DAYS} days)."
-    echo "[INFO] Aborting old backup cleanup to avoid data loss risk."
-    return 0
-  fi
-
-  echo "[INFO] Removing backups older than $MYSQL_BACKUP_RETENTION_DAYS days"
-
-  if [[ -d "$BACKUP_DIR/full" ]]; then
-    find "$BACKUP_DIR/full" -mindepth 1 -maxdepth 1 -type d -mtime +"$MYSQL_BACKUP_RETENTION_DAYS" -exec rm -rf {} +
-  else
-    echo "[INFO] No full backup directory found; skipping old full backups."
-  fi
-
-  if [[ -d "$BACKUP_DIR/incremental" ]]; then
-    find "$BACKUP_DIR/incremental" -mindepth 1 -maxdepth 1 -type d -mtime +"$MYSQL_BACKUP_RETENTION_DAYS" -exec rm -rf {} +
-  else
-    echo "[INFO] No incremental backup directory found; skipping old incremental backups."
-  fi
-
-  if [[ -d "$BACKUP_DIR/dumps" ]]; then
-    find "$BACKUP_DIR/dumps" -mindepth 1 -maxdepth 1 -type f -mtime +"$MYSQL_BACKUP_RETENTION_DAYS" -exec rm -f {} +
-  else
-    echo "[INFO] No dumps directory found; skipping old dump removal."
-  fi
+  echo "$latest_full"
 }
 
-verify_backup() {
-  echo "[INFO] Verifying $TARGET_DIR"
-  mariadb-backup --prepare --target-dir="$TARGET_DIR" --read-only
+# === FUNCTION: Decompress a .zst backup into /tmp === #
+decompress_backup() {
+  local file="$1"
+
+  log_info "Decompressing $file -> /tmp/mariadb_backup/"
+
+  prepare_tmp_dir
+
+  zstd -d -q --stdout "$file" | tar -xf - -C "$TMP_DIR" || {
+    log_error "Failed to decompress $file"
+    exit 1
+  }
 }
 
-next_full_dir() {
-  local count
-  count=$(find "$BACKUP_DIR/full" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | grep "^$TODAY" | wc -l)
-  printf "%s_%02d" "$TODAY" $((count + 1))
-}
-
-next_inc_dir() {
-  local base="$1"
-  local count
-  count=$(find "$BACKUP_DIR/incremental" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | grep "^${base}_" | wc -l)
-  printf "%s_%02d" "$base" $((count + 1))
-}
-
+# === FUNCTION: Create full backup in /tmp first, then compress === #
 perform_full_backup() {
-  local dir_name
-  dir_name="$(next_full_dir)"
-  TARGET_DIR="$BACKUP_DIR/full/$dir_name"
-  mkdir -p "$TARGET_DIR"
-  echo "[INFO] FULL backup -> $TARGET_DIR"
+  prepare_tmp_dir
+
+  log_info "Creating FULL backup in $TMP_DIR"
 
   mariadb-backup \
     --backup \
-    --target-dir="$TARGET_DIR" \
+    --target-dir="$TMP_DIR" \
     --host="$MYSQL_DB_HOST" \
     --user="$MYSQL_ROOT_USER" \
-    --password="$(<"$MYSQL_ROOT_PASSWORD_FILE")" \
-    --compress \
-    --compress-threads="$MYSQL_BACKUP_COMPRESS_THREADS" \
-    --parallel="$MYSQL_BACKUP_PARALLEL"
+    --password="$(cat "$MYSQL_ROOT_PASSWORD_FILE")" > /dev/null 2>&1 || {
+    log_error "MariaDB full backup failed"
+    exit 1
+  }
 
-  verify_backup
+  log_info "Full backup created in $TMP_DIR"
+
+  # Count existing full backups today
+  local count=0
+  if [[ -d "$BACKUP_DIR/$TODAY" ]]; then
+    log_debug "Counting existing full backups from today in $BACKUP_DIR/$TODAY"
+    count=$(find "$BACKUP_DIR"/"$TODAY" -type f -name "full_${TODAY}_*.zst" | wc -l)
+  else
+    log_debug "No existing full backups from today in $BACKUP_DIR/$TODAY"
+  fi
+
+  local suffix=$(printf "%02d" $((count + 1)))
+  compress_backup "full" "$suffix" "$TMP_DIR"
 }
 
+# === FUNCTION: Create incremental backup based on latest full backup === #
 perform_incremental_backup() {
-  local base_name
-  base_name=$(find "$BACKUP_DIR/full" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | tail -n1 || true)
+  local latest_full
+  latest_full=$(get_latest_full)
 
-  if [[ -z "$base_name" ]]; then
-    echo "[WARN] No full backup found, creating full backup instead."
+  if [[ ! -f "$latest_full" ]]; then
+    log_info "No full backup found. Creating one instead."
     perform_full_backup
     return
   fi
 
-  local base_dir="$BACKUP_DIR/full/$base_name"
-  local last_inc_dir
-  last_inc_dir=$(find "$BACKUP_DIR/incremental" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | grep "^$base_name" | sort | tail -n1 || true)
+  log_info "Using $latest_full as base for incremental"
 
-  [[ -n "$last_inc_dir" ]] && base_dir="$BACKUP_DIR/incremental/$last_inc_dir"
+  # Decompress latest full backup into /tmp
+  decompress_backup "$latest_full"
 
-  local inc_name
-  inc_name="$(next_inc_dir "$base_name")"
-  TARGET_DIR="$BACKUP_DIR/incremental/$inc_name"
-  mkdir -p "$TARGET_DIR"
-  echo "[INFO] INCREMENTAL backup -> $TARGET_DIR (base: $base_dir)"
+  # Extract full backup number
+  local full_number="${latest_full##*_}"  # e.g., full_20250615_01.zst -> 01.zst
+  full_number="${full_number%.zst}"      # 01.zst -> 01
+
+  # Count existing incrementals for this full backup
+  local inc_count
+  inc_count=$(find "$BACKUP_DIR"/"$TODAY" -type f -name "incremental_${TODAY}_${full_number}_*.zst" | wc -l)
+
+  local inc_suffix=$(printf "%02d" $((inc_count + 1)))
+
+  log_info "Creating INCREMENTAL backup -> incremental_${TODAY}_${full_number}_${inc_suffix}.zst"
 
   mariadb-backup \
     --backup \
-    --target-dir="$TARGET_DIR" \
-    --incremental-basedir="$base_dir" \
+    --target-dir="$TMP_DIR/incremental" \
+    --incremental-basedir="$TMP_DIR" \
     --host="$MYSQL_DB_HOST" \
     --user="$MYSQL_ROOT_USER" \
-    --password="$(<"$MYSQL_ROOT_PASSWORD_FILE")" \
-    --compress \
-    --compress-threads="$MYSQL_BACKUP_COMPRESS_THREADS" \
-    --parallel="$MYSQL_BACKUP_PARALLEL"
+    --password="$(cat "$MYSQL_ROOT_PASSWORD_FILE")" > /dev/null 2>&1 || {
+    log_error "Failed to create incremental backup"
+    exit 1
+  }
 
-  verify_backup
+  compress_backup "incremental" "${full_number}_${inc_suffix}" "$TMP_DIR/incremental"
 }
 
+# === FUNCTION: Create SQL dump backup using ZSTD === #
 perform_dump_backup() {
-  local dump_file="$BACKUP_DIR/dumps/mariadb_dump_${TODAY}_$(date +'%H%M%S').sql.gz"
-  mkdir -p "$BACKUP_DIR/dumps"
-  echo "[INFO] DUMP backup -> $dump_file"
+  prepare_tmp_dir
+
+  local dump_file="$TMP_DIR/dump.sql"
+  local compressed_file="dump_${TODAY}_$(date +'%H%M%S').sql.zst"
+
+  log_info "Performing DUMP backup -> $compressed_file"
 
   mariadb-dump \
     --host="$MYSQL_DB_HOST" \
     --user="$MYSQL_ROOT_USER" \
-    --password="$(<"$MYSQL_ROOT_PASSWORD_FILE")" \
+    --password="$(cat "$MYSQL_ROOT_PASSWORD_FILE")" \
     --databases "$MYSQL_DATABASE" \
     --single-transaction \
     --routines \
     --triggers \
-    --set-gtid-purged=OFF \
-  | gzip -9 > "$dump_file"
+    --events \
+    --add-drop-database \
+    --add-drop-table \
+    --create-options \
+    --extended-insert \
+    --quick \
+    --net_buffer_length=1M \
+    > "$dump_file" 2>/dev/null || {
+      log_error "Failed to create SQL dump"
+      exit 1
+    }
 
-  echo "[INFO] Dump completed: $dump_file"
+  compress_backup "dump" "$(date +'%H%M%S')" "$TMP_DIR"
 }
 
+# === FUNCTION: Remove backup folders older than X days === #
+remove_old_backups() {
+  log_info "Checking for backup folders older than $MYSQL_BACKUP_RETENTION_DAYS days"
+
+  local old_dirs
+  mapfile -t old_dirs < <(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -mtime +"$MYSQL_BACKUP_RETENTION_DAYS")
+
+  local count="${#old_dirs[@]}"
+
+  if (( count == 0 )); then
+    log_info "No old backup folders found to remove."
+    return
+  fi
+
+  log_info "Found $count old backup folder(s) to delete:"
+  for dir in "${old_dirs[@]}"; do
+    log_info "  -> $dir"
+    rm -rf "$dir"
+  done
+
+  log_debug "$count backup folder(s) older than $MYSQL_BACKUP_RETENTION_DAYS days removed."
+}
+
+# === MAIN FUNCTION === #
 main() {
-  [[ -f "$LOCK_FILE" ]] && { echo "[WARN] Lockfile found, skipping."; exit 0; }
-  touch "$LOCK_FILE"
+  # Filter output unless DEBUG=true
+  if [[ "$DEBUG" != "true" ]]; then
+    exec > >(grep -E '^\[INFO\] |^\[ERROR\] ') 2>&1
+  fi
 
-  is_db_running || { echo "[FATAL] DB not running"; exit 1; }
-
-  check_free_space
   remove_old_backups
 
-  case "$BACKUP_TYPE" in
+  case "$1" in
     full)
       perform_full_backup
       ;;
@@ -189,7 +241,7 @@ main() {
       perform_dump_backup
       ;;
     *)
-      echo "[FATAL] Invalid backup type: $BACKUP_TYPE"
+      log_error "Invalid backup type: $1"
       exit 1
       ;;
   esac
