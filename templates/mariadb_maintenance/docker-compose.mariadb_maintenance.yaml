@@ -82,9 +82,7 @@ services:
       MYSQL_ROOT_PASSWORD_FILE: /run/secrets/MYSQL_ROOT_PASSWORD
       MYSQL_DB_HOST: ${APP_NAME}-mariadb
       MYSQL_BACKUP_RETENTION_DAYS: ${MYSQL_BACKUP_RETENTION_DAYS}
-      MYSQL_BACKUP_COMPRESS_THREADS: ${MYSQL_BACKUP_COMPRESS_THREADS}
-      MYSQL_BACKUP_PARALLEL: ${MYSQL_BACKUP_PARALLEL}
-      MYSQL_BACKUP_MIN_FREE_MB: ${MYSQL_BACKUP_MIN_FREE_MB}
+      MYSQL_BACKUP_DEBUG: ${MYSQL_BACKUP_DEBUG}
       MYSQL_RESTORE_DRY_RUN: ${MYSQL_RESTORE_DRY_RUN}
     logging:                                                                                                                                                    # Configure log driver and limits to control log size and rotation
       driver: "json-file"

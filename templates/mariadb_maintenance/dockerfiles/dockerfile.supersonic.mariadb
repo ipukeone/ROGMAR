@@ -1,18 +1,43 @@
+# === BASE IMAGE ===
 FROM mariadb:lts
 
-# Install supercronic (minimal)
-RUN set -eux; \
-  apt-get update; \
-  apt-get install -y --no-install-recommends curl ca-certificates; \
-  curl -fsSL -o /usr/local/bin/supercronic https://github.com/aptible/supercronic/releases/latest/download/supercronic-linux-amd64; \
-  chmod +x /usr/local/bin/supercronic; \
-  apt-get purge -y --auto-remove curl; \
-  rm -rf /var/lib/apt/lists/*
+# === MAINTAINER (optional) ===
+LABEL maintainer="saervices <admin@it.saervices.de>"
 
-# Copy your entrypoint, backup script and backup cron
-COPY scripts/* /usr/local/bin/
+# === INSTALL REQUIRED TOOLS ===
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+        rsync \
+        zstd \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*;
+
+# === INSTALL LATEST VERSION OF SUPERCronic ===
+RUN set -eux; \
+    cd /tmp; \    
+    LATEST_URL="https://github.com/aptible/supercronic/releases/latest/download/supercronic-linux-amd64";  \
+    echo "Downloading latest supercronic from: $LATEST_URL"; \
+    curl -fsSL -o supercronic "$LATEST_URL"; \
+    chmod +x ./supercronic; \
+    mv ./supercronic /usr/local/bin/supercronic;
+
+# === CREATE DIRECTORIES ===
+RUN set -eux; \
+    mkdir -p /backup /restore;
+    #mkdir -p /backup /restore /usr/local/bin/scripts;
+
+# === COPY SCRIPTS AND CONFIGS ===
+COPY scripts/ /usr/local/bin/
 RUN chmod +x /usr/local/bin/*
 
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+#COPY scripts/ /usr/local/bin/scripts/
+#RUN chmod +x /usr/local/bin/scripts/*
 
-USER mysql
+# === SET DEFAULT USER ===
+USER mysql:mysql
+
+# === ENTRYPOINT & CMD ===
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["default"]
