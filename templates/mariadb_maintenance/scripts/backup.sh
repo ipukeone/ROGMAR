@@ -12,7 +12,7 @@ MYSQL_BACKUP_RETENTION_DAYS="${MYSQL_BACKUP_RETENTION_DAYS:-7}"
 BACKUP_DIR="/backup"
 TMP_DIR="/tmp/mariadb_backup"
 TODAY="$(date +'%Y%m%d')"
-DEBUG="${DEBUG:-true}"
+DEBUG="${MYSQL_BACKUP_DEBUG:-true}"
 
 # === LOGGING === #
 log_info()    { echo "[INFO] $*"; }
