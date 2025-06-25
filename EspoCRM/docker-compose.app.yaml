@@ -52,7 +52,7 @@ services:
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
       - data:/var/www/html:rw                                                                                                                                   # App data volume (adjust as needed)
     secrets:                                                                                                                                                    # Mount the defined secret into the container (usually under /run/secrets/)
-      - MYSQL_PASSWORD
+      - MARIADB_PASSWORD
       - ESPOCRM_ADMIN_PASSWORD
 
     ######################################################################
@@ -85,7 +85,7 @@ services:
     environment:                                                                                                                                                # Environment variables for container configuration
       ESPOCRM_DATABASE_HOST: ${APP_NAME}-mariadb
       ESPOCRM_DATABASE_USER: ${APP_NAME}
-      ESPOCRM_DATABASE_PASSWORD_FILE: /run/secrets/MYSQL_PASSWORD
+      ESPOCRM_DATABASE_PASSWORD_FILE: /run/secrets/MARIADB_PASSWORD
       ESPOCRM_ADMIN_USERNAME: ${ESPOCRM_ADMIN_USERNAME}
       ESPOCRM_ADMIN_PASSWORD_FILE: /run/secrets/ESPOCRM_ADMIN_PASSWORD
       ESPOCRM_SITE_URL: ${ESPOCRM_SITE_URL}
