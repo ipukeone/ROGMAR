@@ -3,34 +3,29 @@ set -euo pipefail
 umask 077
 
 # === ENVIRONMENT VARIABLES === #
-MYSQL_ROOT_USER="${MYSQL_ROOT_USER:-root}"
-MYSQL_DATABASE="${MYSQL_DATABASE:?MYSQL_DATABASE is required}"
-MYSQL_ROOT_PASSWORD_FILE="${MYSQL_ROOT_PASSWORD_FILE:?MYSQL_ROOT_PASSWORD_FILE is required}"
-MYSQL_DB_HOST="${MYSQL_DB_HOST:-mariadb}"
-MYSQL_BACKUP_RETENTION_DAYS="${MYSQL_BACKUP_RETENTION_DAYS:-7}"
+MARIADB_ROOT_USER="${MARIADB_ROOT_USER:-root}"
+MARIADB_DATABASE="${MARIADB_DATABASE:?MARIADB_DATABASE is required}"
+MARIADB_ROOT_PASSWORD_FILE="${MARIADB_ROOT_PASSWORD_FILE:?MARIADB_ROOT_PASSWORD_FILE is required}"
+MARIADB_DB_HOST="${MARIADB_DB_HOST:-mariadb}"
+MARIADB_BACKUP_RETENTION_DAYS="${MARIADB_BACKUP_RETENTION_DAYS:-7}"
 
 BACKUP_DIR="/backup"
 TMP_DIR="/tmp/mariadb_backup"
 TODAY="$(date +'%Y%m%d')"
-DEBUG="${MYSQL_BACKUP_DEBUG:-true}"
+DEBUG="${MARIADB_BACKUP_DEBUG:-false}"
+LOCKFILE="/tmp/mariadb_backup.lock"
 
 # === LOGGING === #
 log_info()    { echo "[INFO] $*"; }
 log_debug()   { [[ "$DEBUG" == "true" ]] && echo "[DEBUG] $*"; }
-log_error()   { echo "[ERROR] $*" >&2; }
+log_err()     { echo "[ERROR] $*" >&2; exit 1; }
 
-# === CLEANUP TEMP DIR ON EXIT === #
-trap 'rm -rf "$TMP_DIR"; rm -f "$LOCKFILE"' EXIT
-
-# === LOCKFILE === #
-LOCKFILE="/tmp/mariadb_backup.lock"
-
-if [[ -e "$LOCKFILE" ]]; then
-  echo "[ERROR] Another backup process is already running. Lockfile exists: $LOCKFILE"
-  exit 1
-fi
-
-echo "$$" > "$LOCKFILE"
+# === CLEANUP ON EXIT === #
+cleanup() {
+  rm -rf "$TMP_DIR"
+  rm -f "$LOCKFILE"
+}
+trap cleanup EXIT INT TERM
 
 # === FUNCTION: Ensure directory exists and is empty === #
 prepare_tmp_dir() {
@@ -58,8 +53,7 @@ compress_backup() {
   log_info "Compressing backup -> $file_name"
 
   tar -cf - -C "$source_dir" . | zstd --rm -q --content-size -o "$BACKUP_DIR/$TODAY/$file_name" || {
-    log_error "Failed to compress backup"
-    exit 1
+    log_err "Failed to compress backup"
   }
 
   log_info "Backup saved as $BACKUP_DIR/$TODAY/$file_name"
@@ -88,8 +82,7 @@ decompress_backup() {
   prepare_tmp_dir
 
   zstd -d -q --stdout "$file" | tar -xf - -C "$TMP_DIR" || {
-    log_error "Failed to decompress $file"
-    exit 1
+    log_err "Failed to decompress $file"
   }
 }
 
@@ -102,11 +95,10 @@ perform_full_backup() {
   mariadb-backup \
     --backup \
     --target-dir="$TMP_DIR" \
-    --host="$MYSQL_DB_HOST" \
-    --user="$MYSQL_ROOT_USER" \
-    --password="$(cat "$MYSQL_ROOT_PASSWORD_FILE")" > /dev/null 2>&1 || {
-    log_error "MariaDB full backup failed"
-    exit 1
+    --host="$MARIADB_DB_HOST" \
+    --user="$MARIADB_ROOT_USER" \
+    --password="$(cat "$MARIADB_ROOT_PASSWORD_FILE")" > /dev/null 2>&1 || {
+    log_err "MariaDB full backup failed"
   }
 
   log_info "Full backup created in $TMP_DIR"
@@ -156,11 +148,10 @@ perform_incremental_backup() {
     --backup \
     --target-dir="$TMP_DIR/incremental" \
     --incremental-basedir="$TMP_DIR" \
-    --host="$MYSQL_DB_HOST" \
-    --user="$MYSQL_ROOT_USER" \
-    --password="$(cat "$MYSQL_ROOT_PASSWORD_FILE")" > /dev/null 2>&1 || {
-    log_error "Failed to create incremental backup"
-    exit 1
+    --host="$MARIADB_DB_HOST" \
+    --user="$MARIADB_ROOT_USER" \
+    --password="$(cat "$MARIADB_ROOT_PASSWORD_FILE")" > /dev/null 2>&1 || {
+    log_err "Failed to create incremental backup"
   }
 
   compress_backup "incremental" "${full_number}_${inc_suffix}" "$TMP_DIR/incremental"
@@ -176,10 +167,10 @@ perform_dump_backup() {
   log_info "Performing DUMP backup -> $compressed_file"
 
   mariadb-dump \
-    --host="$MYSQL_DB_HOST" \
-    --user="$MYSQL_ROOT_USER" \
-    --password="$(cat "$MYSQL_ROOT_PASSWORD_FILE")" \
-    --databases "$MYSQL_DATABASE" \
+    --host="$MARIADB_DB_HOST" \
+    --user="$MARIADB_ROOT_USER" \
+    --password="$(cat "$MARIADB_ROOT_PASSWORD_FILE")" \
+    --databases "$MARIADB_DATABASE" \
     --single-transaction \
     --routines \
     --triggers \
@@ -191,8 +182,7 @@ perform_dump_backup() {
     --quick \
     --net_buffer_length=1M \
     > "$dump_file" 2>/dev/null || {
-      log_error "Failed to create SQL dump"
-      exit 1
+      log_err "Failed to create SQL dump"
     }
 
   compress_backup "dump" "$(date +'%H%M%S')" "$TMP_DIR"
@@ -200,10 +190,10 @@ perform_dump_backup() {
 
 # === FUNCTION: Remove backup folders older than X days === #
 remove_old_backups() {
-  log_info "Checking for backup folders older than $MYSQL_BACKUP_RETENTION_DAYS days"
+  log_info "Checking for backup folders older than $MARIADB_BACKUP_RETENTION_DAYS days"
 
   local old_dirs
-  mapfile -t old_dirs < <(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -mtime +"$MYSQL_BACKUP_RETENTION_DAYS")
+  mapfile -t old_dirs < <(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type d -mtime +"$MARIADB_BACKUP_RETENTION_DAYS")
 
   local count="${#old_dirs[@]}"
 
@@ -218,7 +208,7 @@ remove_old_backups() {
     rm -rf "$dir"
   done
 
-  log_debug "$count backup folder(s) older than $MYSQL_BACKUP_RETENTION_DAYS days removed."
+  log_debug "$count backup folder(s) older than $MARIADB_BACKUP_RETENTION_DAYS days removed."
 }
 
 # === MAIN FUNCTION === #
@@ -226,6 +216,10 @@ main() {
   # Filter output unless DEBUG=true
   if [[ "$DEBUG" != "true" ]]; then
     exec > >(grep -E '^\[INFO\] |^\[ERROR\] ') 2>&1
+  fi
+
+  if ! ( set -o noclobber; echo "$$" > "$LOCKFILE") 2> /dev/null; then
+    log_err "Another backup process is already running. Lockfile exists: $LOCKFILE"
   fi
 
   remove_old_backups
@@ -241,8 +235,7 @@ main() {
       perform_dump_backup
       ;;
     *)
-      log_error "Invalid backup type: $1"
-      exit 1
+      log_err "Invalid backup type: $1"
       ;;
   esac
 }

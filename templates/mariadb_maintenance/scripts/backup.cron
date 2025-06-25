@@ -1,10 +1,10 @@
 # Minute Hour DayOfMonth Month DayOfWeek Command
 
-# Full backup daily at 00:00 AM
+# Daily full backup at midnight
 0 0 * * * /usr/local/bin/backup.sh full
 
-# Incremental backups hourly on the hour
+# Incremental backup every hour on the hour
 0 * * * * /usr/local/bin/backup.sh incremental
 
-# Dump file hourly on the hour
-# 0 * * * * /usr/local/bin/backup.sh dump
+# Logical dump every hour (starts at minute 5 to avoid overlap)
+5 * * * * /usr/local/bin/backup.sh dump

@@ -45,8 +45,8 @@ services:
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
       - database:/var/lib/mysql:rw                                                                                                                              # App data volume (adjust as needed)
     secrets: &mariadb_common_secrets                                                                                                                            # Mount the defined secret into the container (usually under /run/secrets/)
-      - MYSQL_PASSWORD
-      - MYSQL_ROOT_PASSWORD
+      - MARIADB_PASSWORD
+      - MARIADB_ROOT_PASSWORD
 
     ######################################################################
     # --- NETWORKING / REVERSE PROXY
@@ -77,19 +77,19 @@ services:
       - --log-bin=binlog                                                                                                                                        # Enable binary logging (needed for replication, point-in-time recovery, etc.)
       - --binlog-format=ROW                                                                                                                                     # Binary log format - ROW required for READ COMMITTED isolation level
       - --innodb_flush_log_at_trx_commit=2                                                                                                                      # Flush log at transaction commit, balancing durability and performance
-      - --innodb_log_file_size=${MYSQL_INNODB_LOG_FILE_SIZE:-256M}                                                                                              # InnoDB log file size, big enough for performance (adjust to workload) 
-      - --innodb_buffer_pool_size=${MYSQL_INNODB_BUFFER_POOL_SIZE:-2G}                                                                                          # InnoDB buffer pool size, recommended ~70% of container RAM limit
-      - --sort_buffer_size=${MYSQL_SORT_BUFFER_SIZE:-2M}                                                                                                        # Sort buffer size for ORDER BY/GROUP BY performance tuning
-      - --max-allowed-packet=${MYSQL_MAX_ALLOWED_PACKET:-64M}                                                                                                   # Maximum allowed packet size for communication
-      - --innodb_io_capacity=${MYSQL_INNODB_IO_CAPACITY:-1000}                                                                                                  # Number of IOPS InnoDB can handle, increase on SSD systems
+      - --innodb_log_file_size=${MARIADB_INNODB_LOG_FILE_SIZE:-256M}                                                                                            # InnoDB log file size, big enough for performance (adjust to workload) 
+      - --innodb_buffer_pool_size=${MARIADB_INNODB_BUFFER_POOL_SIZE:-2G}                                                                                        # InnoDB buffer pool size, recommended ~70% of container RAM limit
+      - --sort_buffer_size=${MARIADB_SORT_BUFFER_SIZE:-2M}                                                                                                      # Sort buffer size for ORDER BY/GROUP BY performance tuning
+      - --max-allowed-packet=${MARIADB_MAX_ALLOWED_PACKET:-64M}                                                                                                 # Maximum allowed packet size for communication
+      - --innodb_io_capacity=${MARIADB_INNODB_IO_CAPACITY:-1000}                                                                                                # Number of IOPS InnoDB can handle, increase on SSD systems
 
     # entrypoint: ['your-entrypoint.sh']                                                                                                                        # Override default container entrypoint
     environment:                                                                                                                                                # Environment variables for container configuration
-      MYSQL_USER: ${APP_NAME}
-      MYSQL_DATABASE: ${APP_NAME}
-      MYSQL_AUTO_UPGRADE: true
-      MYSQL_PASSWORD_FILE: /run/secrets/MYSQL_PASSWORD
-      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/MYSQL_ROOT_PASSWORD
+      MARIADB_USER: ${APP_NAME}
+      MARIADB_DATABASE: ${APP_NAME}
+      MARIADB_AUTO_UPGRADE: true
+      MARIADB_PASSWORD_FILE: /run/secrets/MARIADB_PASSWORD
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/MARIADB_ROOT_PASSWORD
     logging:                                                                                                                                                    # Configure log driver and limits to control log size and rotation
       driver: "json-file"
       options:
@@ -127,10 +127,10 @@ volumes:
     driver: local
 
 secrets:                                                                                                                                                        # Define sensitive data (like passwords, tokens, keys) securely and inject into services at runtime
-  MYSQL_PASSWORD:
-    file: ${MYSQL_PASSWORD_PATH:?Secret Path required}${MYSQL_PASSWORD_FILENAME:?Secret Filename required}                                                      # Load secret from external file
-  MYSQL_ROOT_PASSWORD:
-    file: ${MYSQL_ROOT_PASSWORD_PATH:?Secret Path required}${MYSQL_ROOT_PASSWORD_FILENAME:?Secret Filename required}                                            # Load secret from external file
+  MARIADB_PASSWORD:
+    file: ${MARIADB_PASSWORD_PATH:?Secret Path required}${MARIADB_PASSWORD_FILENAME:?Secret Filename required}                                                      # Load secret from external file
+  MARIADB_ROOT_PASSWORD:
+    file: ${MARIADB_ROOT_PASSWORD_PATH:?Secret Path required}${MARIADB_ROOT_PASSWORD_FILENAME:?Secret Filename required}                                            # Load secret from external file
 
 networks:
   # frontend:

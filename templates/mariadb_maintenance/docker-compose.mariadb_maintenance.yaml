@@ -75,15 +75,16 @@ services:
     # command: ['your', 'default', 'command']                                                                                                                   # Override default container command
     # entrypoint: ['your-entrypoint.sh']                                                                                                                        # Override default container entrypoint
     environment:                                                                                                                                                # Environment variables for container configuration
-      MYSQL_USER: ${APP_NAME}
-      MYSQL_DATABASE: ${APP_NAME}
-      MYSQL_AUTO_UPGRADE: true
-      MYSQL_PASSWORD_FILE: /run/secrets/MYSQL_PASSWORD
-      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/MYSQL_ROOT_PASSWORD
-      MYSQL_DB_HOST: ${APP_NAME}-mariadb
-      MYSQL_BACKUP_RETENTION_DAYS: ${MYSQL_BACKUP_RETENTION_DAYS}
-      MYSQL_BACKUP_DEBUG: ${MYSQL_BACKUP_DEBUG}
-      MYSQL_RESTORE_DRY_RUN: ${MYSQL_RESTORE_DRY_RUN}
+      MARIADB_USER: ${APP_NAME}
+      MARIADB_DATABASE: ${APP_NAME}
+      MARIADB_AUTO_UPGRADE: true
+      MARIADB_PASSWORD_FILE: /run/secrets/MARIADB_PASSWORD
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/MARIADB_ROOT_PASSWORD
+      MARIADB_DB_HOST: ${APP_NAME}-mariadb
+      MARIADB_BACKUP_RETENTION_DAYS: ${MARIADB_BACKUP_RETENTION_DAYS}
+      MARIADB_BACKUP_DEBUG: ${MARIADB_BACKUP_DEBUG}
+      MARIADB_RESTORE_DRY_RUN: ${MARIADB_RESTORE_DRY_RUN}
+      MARIADB_RESTORE_DEBUG: ${MARIADB_RESTORE_DEBUG}
     logging:                                                                                                                                                    # Configure log driver and limits to control log size and rotation
       driver: "json-file"
       options:

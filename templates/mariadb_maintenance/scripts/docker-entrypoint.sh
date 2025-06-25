@@ -2,131 +2,143 @@
 set -euo pipefail
 umask 077
 
-MYSQL_ROOT_USER="${MYSQL_ROOT_USER:-root}"
-MYSQL_ROOT_PASSWORD_FILE="${MYSQL_ROOT_PASSWORD_FILE:?MYSQL_ROOT_PASSWORD_FILE is required}"
-MYSQL_DB_HOST="${MYSQL_DB_HOST:-mariadb}"
-MYSQL_RESTORE_DRY_RUN="${MYSQL_RESTORE_DRY_RUN:-false}"
+RESTORE_DIR="/restore"
+TMP_BASE="/tmp/restore_chain"
+MARIADB_DIR="/var/lib/mysql"
+DRY_RUN="${MARIADB_RESTORE_DRY_RUN:-false}"
+DEBUG="${MARIADB_RESTORE_DEBUG:-false}"
+LOCKFILE="/tmp/restore.lock"
 
-RESTORE_DIR="${RESTORE_DIR:-/restore}"
-LOCK_FILE="/tmp/restore.lock"
+# === LOGGING === #
+log_info()  { echo "[INFO] $*"; }
+log_debug() { [[ "$DEBUG" == "true" ]] && echo "[DEBUG] $*"; }
+log_dry()   { [[ "$DRY_RUN" == "true" ]] && echo "[DRY RUN] $*"; }
+log_err()   { echo "[ERROR] $*" >&2; exit 1; }
 
+# === CLEANUP ON EXIT === #
 cleanup() {
-  [[ -f "$LOCK_FILE" ]] && rm -f "$LOCK_FILE"
+  rm -rf "$TMP_BASE"
+  rm -f "$LOCKFILE"
 }
 trap cleanup EXIT INT TERM
 
-is_db_running() {
-  if mariadb-admin ping --silent --host="$MYSQL_DB_HOST" --user="$MYSQL_ROOT_USER" --password="$(<"$MYSQL_ROOT_PASSWORD_FILE")" > /dev/null 2>&1; then
-    echo "[FATAL] MariaDB appears to be running (ping successful). Aborting restore."
-    exit 1
-  fi
+# === FIND BACKUP CHAIN === #
+find_restore_chain() {
+  local full
+  full=$(find "$RESTORE_DIR" -maxdepth 1 -type f -name 'full_*.zst' | sort -V | tail -n1)
+  [[ -z "$full" ]] && log_err "No full backup found."
 
-  if pgrep -x mariadbd > /dev/null; then
-    echo "[FATAL] MariaDB process found running. Aborting restore."
-    exit 1
-  fi
+  local id="${full##*/}"
+  id="${id#full_}"
+  id="${id%.zst}"
+
+  log_info "Detected backup ID: $id"
+
+  mapfile -t RESTORE_CHAIN < <(find "$RESTORE_DIR" -maxdepth 1 -type f -name "incremental_${id}_*.zst" | sort -V)
+  RESTORE_CHAIN=("$full" "${RESTORE_CHAIN[@]}")
+
+  log_info "Restore chain to be applied:"
+  for f in "${RESTORE_CHAIN[@]}"; do
+    log_info " - $(basename "$f")"
+  done
 }
 
-get_restore_chain() {
-  local full_dir
-  full_dir="$(find "$RESTORE_DIR" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | grep -E '^[0-9]{8}_[0-9]{2}$' | sort | head -n1 || true)"
-  if [[ -z "$full_dir" ]]; then
-    echo "[FATAL] No full backup found in $RESTORE_DIR"
-    exit 1
-  fi
-
-  local chain=("$full_dir")
-  local next_idx=1
-  while :; do
-    local inc_dir="${full_dir}_$(printf '%02d' $next_idx)"
-    if [[ -d "$RESTORE_DIR/$inc_dir" ]]; then
-      chain+=("$inc_dir")
-      ((next_idx++))
-    else
-      break
-    fi
-  done
-
-  # Check for gaps
-  for ((i=1; i<${#chain[@]}; i++)); do
-    local expected="${full_dir}_$(printf '%02d' $i)"
-    if [[ "${chain[$i]}" != "$expected" ]]; then
-      echo "[FATAL] Backup chain inconsistent. Expected $expected, found ${chain[$i]}"
-      exit 1
-    fi
-  done
-
-  printf "%s\n" "${chain[@]}"
-}
-
-decompress_if_needed() {
+fix_backup_cnf() {
   local dir="$1"
-  if find "$dir" -type f -name '*.qp' | grep -q .; then
-    echo "[INFO] Decompressing backup directory: $dir"
-    mariadb-backup --decompress --target-dir="$dir"
-  else
-    echo "[INFO] No compressed files found in $dir"
-  fi
+  local f="$dir/backup-my.cnf"
+  [[ ! -f "$f" ]] && return
+  sed -i 's|^datadir=.*|datadir=/var/lib/mysql|' "$f"
+  sed -i 's|^innodb_data_home_dir=.*|innodb_data_home_dir=/var/lib/mysql|' "$f"
+  sed -i 's|^innodb_log_group_home_dir=.*|innodb_log_group_home_dir=/var/lib/mysql|' "$f"
 }
 
-prepare_restore_chain() {
-  local chain=("$@")
-  local full_path="$RESTORE_DIR/${chain[0]}"
+prepare_chain() {
+  rm -rf "$TMP_BASE"
+  mkdir -p "$TMP_BASE/full"
 
-  decompress_if_needed "$full_path"
-  echo "[INFO] Preparing FULL backup: $full_path"
-  mariadb-backup --prepare --target-dir="$full_path"
+  local restore_files=("$@")
+  local first=1
 
-  for ((i=1; i<${#chain[@]}; i++)); do
-    local inc_path="$RESTORE_DIR/${chain[$i]}"
-    decompress_if_needed "$inc_path"
-    echo "[INFO] Preparing INCREMENTAL backup: $inc_path"
-    mariadb-backup --prepare --target-dir="$full_path" --incremental-dir="$inc_path"
+  for archive in "${restore_files[@]}"; do
+    local name=$(basename "${archive%.zst}")
+    local target_dir="$TMP_BASE/$name"
+    [[ $first -eq 1 ]] && target_dir="$TMP_BASE/full" && first=0
+    mkdir -p "$target_dir"
+
+    log_info "Extracting: $(basename "$archive") → $target_dir"
+    zstd -d --stdout "$archive" | tar -xf - -C "$target_dir" || log_err "Extraction failed"
+    fix_backup_cnf "$target_dir"
   done
 
-  echo "$full_path"
+  log_info "Preparing base..."
+  mariadb-backup --prepare --target-dir="$TMP_BASE/full"
+
+  for inc in "${restore_files[@]:1}"; do
+    local name=$(basename "${inc%.zst}")
+    log_info "Applying incremental: $name"
+    mariadb-backup --prepare \
+      --target-dir="$TMP_BASE/full" \
+      --incremental-dir="$TMP_BASE/$name"
+  done
 }
 
-perform_restore() {
-  echo "[INFO] Starting automated restore from $RESTORE_DIR"
-  local chain
-  mapfile -t chain < <(get_restore_chain)
-  local ready_dir
-  ready_dir="$(prepare_restore_chain "${chain[@]}")"
-
-  if [[ "$MYSQL_RESTORE_DRY_RUN" == "true" ]]; then
-    echo "[INFO] MYSQL_RESTORE_DRY_RUN is enabled. No copy-back performed."
+copy_back() {
+  if [[ "$DRY_RUN" == "true" ]]; then
+    log_dry "Would wipe $MARIADB_DIR and copy data from $TMP_BASE/full"
     return
   fi
 
-  rm -rf /var/lib/mysql/*
-  echo "[INFO] Deleted old database files in /var/lib/mysql"
+  log_info "Removing $MARIADB_DIR content..."
+  find "$MARIADB_DIR" -mindepth 1 -exec rm -rf {} + || log_err "Failed to wipe contents of $MARIADB_DIR"
+  chown mysql:mysql "$MARIADB_DIR"
 
-  mariadb-backup --copy-back --target-dir="$ready_dir"
-
+  log_info "Copying data to $MARIADB_DIR..."
+  mariadb-backup --copy-back --target-dir="$TMP_BASE/full"
+  chown -R mysql:mysql "$MARIADB_DIR"
   sync
-  chown -R mysql:mysql /var/lib/mysql
-  echo "[INFO] Changed ownership of /var/lib/mysql to mysql:mysql"
-  echo "[INFO] Restore completed successfully."
+}
+
+cleanup_restore_dir() {
+  log_info "Cleaning up restore temp data"
+  rm -rf "$TMP_BASE"
+  rm -rf "$RESTORE_DIR"/*
+}
+
+test_fs_writable() {
+  local testfile="/var/lib/mysql/.writetest_$$"
+  if touch "$testfile" 2>/dev/null; then
+    rm -f "$testfile"
+    return 0
+  else
+    return 1
+  fi
 }
 
 main() {
-  if [[ -d "$RESTORE_DIR" ]] && [[ "$(ls -A "$RESTORE_DIR")" ]]; then
-    echo "[INFO] Restore requested. MariaDB MUST NOT be running during restore."
+  local cron_file="${1:-/usr/local/bin/backup.cron}"
 
-    if [[ -f "$LOCK_FILE" ]]; then
-      echo "[WARN] Restore lockfile found. Skipping restore to avoid duplicate restore."
-    else
-      is_db_running
-      touch "$LOCK_FILE"
-      perform_restore
+  if [[ -d "$RESTORE_DIR" && "$(find "$RESTORE_DIR" -maxdepth 1 -name 'full_*.zst' | wc -l)" -gt 0 ]]; then
+    if ! ( set -o noclobber; echo "$$" > "$LOCKFILE") 2> /dev/null; then
+      log_err "Restore lockfile exists. Another restore might be running or previous restore did not clean up. Aborting."
     fi
+    
+    log_info "Restore requested. Starting restore..."
+    
+    if ! test_fs_writable; then
+      log_err "/var/lib/mysql is not writable. Check if 'read_only: true' is set in docker-compose.yml. Set it temporary to false for a restore!"
+    fi
+
+    find_restore_chain
+    prepare_chain "${RESTORE_CHAIN[@]}"
+    copy_back
+    cleanup_restore_dir
+    log_info "Restore completed."
   else
-    echo "[INFO] No restore requested. Proceeding to backup schedule."
+    log_info "No restore requested. Proceeding to backup schedule."
   fi
 
-  echo "[INFO] Starting supercronic with cron file: $*"
-  exec /usr/local/bin/supercronic "$@"
+  log_info "Starting supercronic with cron file: $cron_file"
+  exec /usr/local/bin/supercronic "$cron_file"
 }
 
 main "/usr/local/bin/backup.cron"
