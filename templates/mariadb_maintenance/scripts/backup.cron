@@ -7,4 +7,4 @@
 0 * * * * /usr/local/bin/backup.sh incremental
 
 # Logical dump every hour (starts at minute 5 to avoid overlap)
-5 * * * * /usr/local/bin/backup.sh dump
+#5 * * * * /usr/local/bin/backup.sh dump
