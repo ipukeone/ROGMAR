@@ -15,31 +15,50 @@ TODAY="$(date +'%Y%m%d')"
 DEBUG="${MARIADB_BACKUP_DEBUG:-false}"
 LOCKFILE="/tmp/mariadb_backup.lock"
 
-# === LOGGING === #
-log_info()    { echo "[INFO] $*"; }
-log_debug()   { [[ "$DEBUG" == "true" ]] && echo "[DEBUG] $*"; }
-log_err()     { echo "[ERROR] $*" >&2; exit 1; }
+# === LOGGING FUNCTIONS === #
+log_info() {
+  printf '[INFO] %s\n' "$*"
+}
 
-# === CLEANUP ON EXIT === #
+log_debug() {
+  if [[ "${DEBUG:-false}" == "true" ]]; then
+    printf '[DEBUG] %s\n' "$*"
+  fi
+}
+
+log_dry() {
+  if [[ "${DRY_RUN:-false}" == "true" ]]; then
+    printf '[DRY RUN] %s\n' "$*"
+  fi
+}
+
+log_err() {
+  printf '[ERROR] %s\n' "$*" >&2
+  exit 1
+}
+
+# === CLEANUP HANDLER ON EXIT === #
+# Cleans up temporary directory and lockfile on script exit
 cleanup() {
   rm -rf "$TMP_DIR"
   rm -f "$LOCKFILE"
 }
 trap cleanup EXIT INT TERM
 
-# === FUNCTION: Ensure directory exists and is empty === #
+# === CREATE/RESET TEMPORARY DIRECTORY === #
+# Ensures the backup workspace is clean and ready
 prepare_tmp_dir() {
   rm -rf "$TMP_DIR"
   mkdir -p "$TMP_DIR"
-
   log_debug "Created $TMP_DIR"
 }
 
-# === FUNCTION: Compress entire folder to .zst with proper naming === #
+# === COMPRESS BACKUP DIRECTORY TO .zst FILE === #
+# Archives and compresses a backup directory to .zst
 compress_backup() {
   local type="$1"     # full|incremental|dump
   local suffix="$2"   # e.g., 01 or 01_01
-  local source_dir="${3:-$TMP_DIR}"  # optional: directory to be compressed
+  local source_dir="${3:-$TMP_DIR}"  # directory to compress
 
   mkdir -p "$BACKUP_DIR/$TODAY"
 
@@ -59,7 +78,8 @@ compress_backup() {
   log_info "Backup saved as $BACKUP_DIR/$TODAY/$file_name"
 }
 
-# === FUNCTION: Get latest full backup for incremental usage === #
+# === LOCATE LATEST FULL BACKUP === #
+# Returns the path of the latest full backup for today or earlier
 get_latest_full() {
   local latest_full
   latest_full=$(find "$BACKUP_DIR"/"$TODAY"/full_"$TODAY"_*.zst "$BACKUP_DIR"/full_"$TODAY"_*.zst 2>/dev/null \
@@ -73,12 +93,12 @@ get_latest_full() {
   echo "$latest_full"
 }
 
-# === FUNCTION: Decompress a .zst backup into /tmp === #
+# === DECOMPRESS BACKUP TO TEMP FOLDER === #
+# Unpacks a given .zst archive into $TMP_DIR
 decompress_backup() {
   local file="$1"
 
   log_info "Decompressing $file -> /tmp/mariadb_backup/"
-
   prepare_tmp_dir
 
   zstd -d -q --stdout "$file" | tar -xf - -C "$TMP_DIR" || {
@@ -86,7 +106,8 @@ decompress_backup() {
   }
 }
 
-# === FUNCTION: Create full backup in /tmp first, then compress === #
+# === PERFORM FULL BACKUP === #
+# Executes a full mariadb-backup and compresses the result
 perform_full_backup() {
   prepare_tmp_dir
 
@@ -116,7 +137,8 @@ perform_full_backup() {
   compress_backup "full" "$suffix" "$TMP_DIR"
 }
 
-# === FUNCTION: Create incremental backup based on latest full backup === #
+# === PERFORM INCREMENTAL BACKUP === #
+# Backs up only the changes since the latest full backup
 perform_incremental_backup() {
   local latest_full
   latest_full=$(get_latest_full)
@@ -124,7 +146,7 @@ perform_incremental_backup() {
   if [[ ! -f "$latest_full" ]]; then
     log_info "No full backup found. Creating one instead."
     perform_full_backup
-    return
+    return 0
   fi
 
   log_info "Using $latest_full as base for incremental"
@@ -157,7 +179,8 @@ perform_incremental_backup() {
   compress_backup "incremental" "${full_number}_${inc_suffix}" "$TMP_DIR/incremental"
 }
 
-# === FUNCTION: Create SQL dump backup using ZSTD === #
+# === PERFORM SQL DUMP BACKUP === #
+# Creates a logical SQL dump and compresses it with zstd
 perform_dump_backup() {
   prepare_tmp_dir
 
@@ -188,7 +211,8 @@ perform_dump_backup() {
   compress_backup "dump" "$(date +'%H%M%S')" "$TMP_DIR"
 }
 
-# === FUNCTION: Remove backup folders older than X days === #
+# === DELETE OLD BACKUPS === #
+# Deletes backup folders older than the configured retention period
 remove_old_backups() {
   log_info "Checking for backup folders older than $MARIADB_BACKUP_RETENTION_DAYS days"
 
@@ -199,7 +223,7 @@ remove_old_backups() {
 
   if (( count == 0 )); then
     log_info "No old backup folders found to remove."
-    return
+    return 0
   fi
 
   log_info "Found $count old backup folder(s) to delete:"
@@ -211,7 +235,8 @@ remove_old_backups() {
   log_debug "$count backup folder(s) older than $MARIADB_BACKUP_RETENTION_DAYS days removed."
 }
 
-# === MAIN FUNCTION === #
+# === MAIN ENTRY POINT === #
+# Entry point: handles lockfile, cleanup, backup type execution
 main() {
   # Filter output unless DEBUG=true
   if [[ "$DEBUG" != "true" ]]; then

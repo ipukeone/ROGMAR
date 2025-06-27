@@ -2,27 +2,62 @@
 set -euo pipefail
 umask 077
 
+# === ENVIRONMENT VARIABLES === #
+MARIADB_ROOT_USER="${MARIADB_ROOT_USER:-root}"
+MARIADB_ROOT_PASSWORD_FILE="${MARIADB_ROOT_PASSWORD_FILE:?MARIADB_ROOT_PASSWORD_FILE is required}"
+MARIADB_DB_HOST="${MARIADB_DB_HOST:-mariadb}"
+MARIADB_RESTORE_DRY_RUN="${MARIADB_RESTORE_DRY_RUN:-false}"
+
 RESTORE_DIR="/restore"
 TMP_BASE="/tmp/restore_chain"
 MARIADB_DIR="/var/lib/mysql"
-DRY_RUN="${MARIADB_RESTORE_DRY_RUN:-false}"
 DEBUG="${MARIADB_RESTORE_DEBUG:-false}"
 LOCKFILE="/tmp/restore.lock"
 
 # === LOGGING === #
-log_info()  { echo "[INFO] $*"; }
-log_debug() { [[ "$DEBUG" == "true" ]] && echo "[DEBUG] $*"; }
-log_dry()   { [[ "$DRY_RUN" == "true" ]] && echo "[DRY RUN] $*"; }
-log_err()   { echo "[ERROR] $*" >&2; exit 1; }
+log_info() {
+  printf '[INFO] %s\n' "$*"
+}
+
+log_debug() {
+  if [[ "${DEBUG:-false}" == "true" ]]; then
+    printf '[DEBUG] %s\n' "$*"
+  fi
+}
+
+log_dry() {
+  if [[ "${MARIADB_RESTORE_DRY_RUN:-false}" == "true" ]]; then
+    printf '[DRY RUN] %s\n' "$*"
+  fi
+}
+
+log_err() {
+  printf '[ERROR] %s\n' "$*" >&2
+  exit 1
+}
 
 # === CLEANUP ON EXIT === #
+# Removes temporary restore data and lockfile when the script exits
 cleanup() {
   rm -rf "$TMP_BASE"
   rm -f "$LOCKFILE"
 }
 trap cleanup EXIT INT TERM
 
+# === CHECK IF DB IS RUNNING === #
+# Verifies that MariaDB is not running before starting the restore
+is_db_running() {
+  if mariadb-admin ping --silent --host="$MARIADB_DB_HOST" --user="$MARIADB_ROOT_USER" --password="$(<"$MARIADB_ROOT_PASSWORD_FILE")" > /dev/null 2>&1; then
+    log_err "MariaDB appears to be running (ping successful). Aborting restore."
+  fi
+
+  if pgrep -x mariadbd > /dev/null; then
+    log_err "MariaDB process found running. Aborting restore."
+  fi
+}
+
 # === FIND BACKUP CHAIN === #
+# Identifies the latest full backup and associated incrementals
 find_restore_chain() {
   local full
   full=$(find "$RESTORE_DIR" -maxdepth 1 -type f -name 'full_*.zst' | sort -V | tail -n1)
@@ -43,6 +78,8 @@ find_restore_chain() {
   done
 }
 
+# === FIX BACKUP CONFIG FILE === #
+# Adjusts backup-my.cnf to point to correct data directory
 fix_backup_cnf() {
   local dir="$1"
   local f="$dir/backup-my.cnf"
@@ -52,6 +89,8 @@ fix_backup_cnf() {
   sed -i 's|^innodb_log_group_home_dir=.*|innodb_log_group_home_dir=/var/lib/mysql|' "$f"
 }
 
+# === PREPARE CHAIN === #
+# Decompresses and prepares full and incremental backups
 prepare_chain() {
   rm -rf "$TMP_BASE"
   mkdir -p "$TMP_BASE/full"
@@ -82,8 +121,10 @@ prepare_chain() {
   done
 }
 
+# === COPY BACK === #
+# Replaces MariaDB data directory with the restored data
 copy_back() {
-  if [[ "$DRY_RUN" == "true" ]]; then
+  if [[ "$MARIADB_RESTORE_DRY_RUN" == "true" ]]; then
     log_dry "Would wipe $MARIADB_DIR and copy data from $TMP_BASE/full"
     return
   fi
@@ -98,12 +139,16 @@ copy_back() {
   sync
 }
 
+# === CLEANUP RESTORE DIR === #
+# Removes extracted backups and original compressed archives
 cleanup_restore_dir() {
   log_info "Cleaning up restore temp data"
   rm -rf "$TMP_BASE"
   rm -rf "$RESTORE_DIR"/*
 }
 
+# === TEST FILESYSTEM WRITABILITY === #
+# Ensures MariaDB data dir is writable (e.g. not read-only mount)
 test_fs_writable() {
   local testfile="/var/lib/mysql/.writetest_$$"
   if touch "$testfile" 2>/dev/null; then
@@ -114,6 +159,8 @@ test_fs_writable() {
   fi
 }
 
+# === MAIN ENTRY POINT === #
+# Executes restore if triggered, otherwise starts cron
 main() {
   local cron_file="${1:-/usr/local/bin/backup.cron}"
 
@@ -127,12 +174,15 @@ main() {
     if ! test_fs_writable; then
       log_err "/var/lib/mysql is not writable. Check if 'read_only: true' is set in docker-compose.yml. Set it temporary to false for a restore!"
     fi
+    
+    is_db_running
 
     find_restore_chain
     prepare_chain "${RESTORE_CHAIN[@]}"
     copy_back
     cleanup_restore_dir
     log_info "Restore completed."
+    return 0
   else
     log_info "No restore requested. Proceeding to backup schedule."
   fi
