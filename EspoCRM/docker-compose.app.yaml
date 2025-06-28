@@ -83,7 +83,7 @@ services:
         exec docker-entrypoint.sh apache2-foreground
       '
     environment:                                                                                                                                                # Environment variables for container configuration
-      ESPOCRM_DATABASE_PLATFORM: mysql
+      ESPOCRM_DATABASE_PLATFORM: Mysql
       ESPOCRM_DATABASE_HOST: ${APP_NAME}-mariadb
       ESPOCRM_DATABASE_USER: ${APP_NAME}
       ESPOCRM_DATABASE_NAME: ${APP_NAME}
