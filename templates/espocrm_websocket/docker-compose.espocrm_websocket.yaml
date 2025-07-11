@@ -1,4 +1,8 @@
 ---
+x-required-anchors:
+  volumes: &espocrm_common_volumes
+    - volumes
+
 services:
   espocrm_websocket:
     ######################################################################
@@ -41,10 +45,7 @@ services:
     ######################################################################
     # --- FILESYSTEM & SECRETS
     ######################################################################
-    volumes:                                                                                                                                                    # Mount external storage or host directories into the container for persistent data or config
-      - /etc/localtime:/etc/localtime:ro                                                                                                                        # Set container time to host time
-      - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
-      - data:/var/www/html:rw                                                                                                                                   # App data volume (adjust as needed)
+    volumes: *espocrm_common_volumes                                                                                                                            # Mount external storage or host directories into the container for persistent data or config
     # secrets:                                                                                                                                                  # Mount the defined secret into the container (usually under /run/secrets/)
     #   - APP_PASSWORD
 

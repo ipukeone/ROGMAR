@@ -47,10 +47,10 @@ services:
     ######################################################################
     # --- FILESYSTEM & SECRETS
     ######################################################################
-    volumes:                                                                                                                                                    # Mount external storage or host directories into the container for persistent data or config
+    volumes: &espocrm_common_volumes                                                                                                                                                    # Mount external storage or host directories into the container for persistent data or config
       - /etc/localtime:/etc/localtime:ro                                                                                                                        # Set container time to host time
       - /etc/timezone:/etc/timezone:ro                                                                                                                          # Pass timezone info
-      - data:/var/www/html:rw                                                                                                                                   # App data volume (adjust as needed)
+      - ./appdata/data:/var/www/html:rw                                                                                                                         # App data volume (adjust as needed)
     secrets:                                                                                                                                                    # Mount the defined secret into the container (usually under /run/secrets/)
       - MARIADB_PASSWORD
       - ESPOCRM_ADMIN_PASSWORD
@@ -121,9 +121,9 @@ services:
     #     soft: 65535                                                                                                                                           # Soft limit: default max open files a process can have
     #     hard: 65535                                                                                                                                           # Hard limit: maximum value the soft limit can be raised to by privileged processes
 
-volumes:
-  data:
-    driver: local
+# volumes:
+#   data:
+#     driver: local
 
 secrets:                                                                                                                                                        # Define sensitive data (like passwords, tokens, keys) securely and inject into services at runtime
   ESPOCRM_ADMIN_PASSWORD:
