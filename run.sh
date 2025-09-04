@@ -23,7 +23,11 @@ GREY='\033[1;30m'
 MAGENTA='\033[0;35m'
 
 # Function: log_ok
-# ${GREEN}[OK]
+# Description: Logs a success message to stdout and to the logfile if configured.
+# Arguments:
+#   $*: The message to log.
+# Example:
+#   log_ok "Operation completed successfully."
 # ───────────────────────────────────────
 log_ok() {
   local msg="$*"
@@ -34,7 +38,11 @@ log_ok() {
 }
 
 # Function: log_info
-# ${CYAN}[INFO]
+# Description: Logs an informational message to stdout and to the logfile if configured.
+# Arguments:
+#   $*: The message to log.
+# Example:
+#   log_info "Starting process..."
 # ───────────────────────────────────────
 log_info() {
   local msg="$*"
@@ -45,7 +53,11 @@ log_info() {
 }
 
 # Function: log_warn
-# ${YELLOW}[WARN]
+# Description: Logs a warning message to stderr and to the logfile if configured.
+# Arguments:
+#   $*: The message to log.
+# Example:
+#   log_warn "Configuration file not found, using defaults."
 # ───────────────────────────────────────
 log_warn() {
   local msg="$*"
@@ -56,7 +68,11 @@ log_warn() {
 }
 
 # Function: log_error
-# ${RED}[ERROR]
+# Description: Logs an error message to stderr and to the logfile if configured.
+# Arguments:
+#   $*: The message to log.
+# Example:
+#   log_error "Failed to connect to the database."
 # ───────────────────────────────────────
 log_error() {
   local msg="$*"
@@ -67,7 +83,11 @@ log_error() {
 }
 
 # Function: log_debug
-# ${GREY}[DEBUG]
+# Description: Logs a debug message to stdout and to the logfile if the DEBUG global is true.
+# Arguments:
+#   $*: The message to log.
+# Example:
+#   log_debug "Variable x has value: $x"
 # ───────────────────────────────────────
 log_debug() {
   local msg="$*"
@@ -80,8 +100,18 @@ log_debug() {
 }
 
 # Function: setup_logging
-# Initializes logging file inside TARGET_DIR
-# Keep only the latest $log_retention_count logs
+# Description:
+#   Initializes the logging system. It creates a log directory within the project
+#   folder, sets up a new log file with a timestamp, and symlinks it to 'latest.log'.
+#   It also handles log rotation by deleting older log files, keeping only a
+#   specified number of recent logs.
+# Arguments:
+#   $1 - The number of log files to retain. Defaults to 2.
+# Globals:
+#   - SCRIPT_DIR: The directory where the script is located.
+#   - TARGET_DIR: The root directory of the project being processed.
+#   - SCRIPT_BASE: The base name of the script without the extension.
+#   - LOGFILE: This global variable is set to the path of the new log file.
 # ───────────────────────────────────────
 setup_logging() {
   local log_retention_count="${1:-2}"
@@ -98,7 +128,7 @@ setup_logging() {
   ln -sf "$LOGFILE" "$log_dir/latest.log"
 
   # Retain only the latest N logs
-  local logs  
+  local logs
   mapfile -t logs < <(
   find "$log_dir" -maxdepth 1 -type f -name '*.log' -printf "%T@ %p\n" |
   sort -nr | cut -d' ' -f2- | tail -n +$((log_retention_count + 1))
@@ -114,7 +144,11 @@ setup_logging() {
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Function: usage
-# Displays help and usage information
+# Description:
+#   Displays the help and usage information for the script, including available
+#   options and command-line examples.
+# Globals:
+#   - SCRIPT_BASE: The base name of the script, used in the usage message.
 # ───────────────────────────────────────
 usage() {
   echo ""
@@ -139,12 +173,20 @@ usage() {
 }
 
 # Function: install_dependency
-# Installs a dependency using apt, yum or from a custom URL
+# Description:
+#   Installs a given dependency. It can handle installations via a direct URL
+#   (specifically for 'yq') or using the system's package manager (apt or yum).
+#   The function will skip the actual installation if DRY_RUN mode is enabled.
+# Arguments:
+#   $1 - The name of the dependency to install (e.g., "yq", "git").
+#   $2 - (Optional) A direct download URL for the dependency.
+# Globals:
+#   - DRY_RUN: If true, the function will only log what it would do.
 # ───────────────────────────────────────
 install_dependency() {
   local name="$1"
   local url="${2:-}"
-  
+
   if [[ "$DRY_RUN" == true ]]; then
     log_info "Dry-run: skipping actual installation of '$name'."
     return 0
@@ -171,9 +213,11 @@ install_dependency() {
   log_info "$name installed successfully."
 }
 
-# Ensure a directory exists (create if missing)
+# Function: ensure_dir_exists
+# Description:
+#   Checks if a directory exists at the specified path and creates it if it doesn't.
 # Arguments:
-#   $1 - directory path
+#   $1 - The path of the directory to check and create.
 # ───────────────────────────────────────
 ensure_dir_exists() {
   local dir="$1"
@@ -195,8 +239,15 @@ ensure_dir_exists() {
 }
 
 # Function: copy_file
-# Copy a file to a target location, overwriting if exists.
-# Supports DRY_RUN to simulate the operation.
+# Description:
+#   Copies a single file from a source path to a destination path. It will
+#   overwrite the destination file if it already exists. The operation is
+#   skipped if DRY_RUN mode is enabled.
+# Arguments:
+#   $1 - The source file path.
+#   $2 - The destination file path.
+# Globals:
+#   - DRY_RUN: If true, the function will only log what it would do.
 # ─────────────────────────────────────────────────────────────
 copy_file() {
   local src_file="$1"
@@ -226,9 +277,17 @@ copy_file() {
 }
 
 # Function: merge_subfolders_from
-# Copy all subfolders from a matched source folder into a destination folder.
-# Existing folders will be merged (new files added, nothing overwritten).
-# Supports DRY_RUN to simulate the operation.
+# Description:
+#   Copies all sub-directories from a source directory (e.g., a template's 'secrets'
+#   or 'scripts' folder) into a destination directory. It uses `rsync` to merge
+#   the contents, meaning it will add new files without overwriting any existing
+#   files at the destination.
+# Arguments:
+#   $1 - The root directory where the source folder is located (e.g., /tmp/templates).
+#   $2 - The name of the source folder to merge from (e.g., "redis").
+#   $3 - The destination root directory (e.g., /path/to/project).
+# Globals:
+#   - DRY_RUN: If true, the function will only log what it would do.
 # ───────────────────────────────────────────────────────────────────────
 merge_subfolders_from() {
   local src_root="$1"
@@ -274,7 +333,12 @@ merge_subfolders_from() {
 }
 
 # Function: setup_cleanup_trap
-# Register EXIT trap to clean up temporary folder
+# Description:
+#   Sets up a trap that will be executed on script exit. The trap's purpose is
+#   to clean up and remove the temporary directory created by the script,
+#   ensuring no temporary files are left behind.
+# Globals:
+#   - TMPDIR: The path to the temporary directory to be removed.
 # ────────────────────────────────────────────────
 setup_cleanup_trap() {
   trap '[[ -d "$TMPDIR" ]] && rm -rf -- "$TMPDIR"' EXIT
@@ -282,8 +346,18 @@ setup_cleanup_trap() {
 }
 
 # Function: process_merge_file
-# Merges a key=value file into a target file without overwriting existing keys.
-# Supports dry-run mode and comment/blank-line preservation.
+# Description:
+#   Merges the contents of a source .env file into a destination .env file.
+#   It avoids adding duplicate variables; if a variable from the source file
+#   already exists in the destination (tracked via an associative array), it is
+#   skipped. Comments and blank lines from the source file are preserved.
+# Arguments:
+#   $1 - The path to the source .env file to merge from.
+#   $2 - The path to the destination .env file.
+#   $3 - The name of an associative array (passed by reference) used to track
+#        variables that have already been seen.
+# Globals:
+#   - DRY_RUN: If true, the function will only log what it would do.
 # ────────────────────────────────────────────────
 process_merge_file() {
   local file="$1"
@@ -355,10 +429,17 @@ process_merge_file() {
 }
 
 # Function: process_merge_yaml_file
-# Merges a single docker-compose YAML file into a target YAML file using yq.
-# Applies key-by-key merging logic with override behavior.
-# Preserves structure and formatting, skipping x-required-services and comments.
-# Supports dry-run mode.
+# Description:
+#   Merges a source Docker Compose YAML file into a target YAML file. It uses `yq`
+#   to intelligently merge top-level keys (services, volumes, secrets, networks).
+#   The function first cleans the YAML files by removing comments and the custom
+#   `x-required-services` key before performing the merge.
+# Arguments:
+#   $1 - The path to the source Docker Compose YAML file.
+#   $2 - The path to the target (main) Docker Compose YAML file.
+# Globals:
+#   - TMPDIR: Used for storing temporary cleaned YAML files.
+#   - DRY_RUN: If true, the function will only log what it would do.
 # ────────────────────────────────────────────────
 process_merge_yaml_file() {
   local source_file="$1"
@@ -417,10 +498,16 @@ process_merge_yaml_file() {
 }
 
 # Function: backup_existing_file
-# Backup a single source file into the target directory.
-# The backup filename is source filename + timestamp suffix.
-# Keeps only a limited number of backups (default 2).
-# Supports DRY_RUN and logs all actions.
+# Description:
+#   Creates a timestamped backup of a given file in a specified backup directory.
+#   It also enforces a retention policy, deleting the oldest backups if the
+#   number of backups exceeds a defined limit.
+# Arguments:
+#   $1 - The path of the file to back up.
+#   $2 - The directory where the backup file should be stored.
+#   $3 - (Optional) The maximum number of backups to retain. Defaults to 2.
+# Globals:
+#   - DRY_RUN: If true, the function will only log what it would do.
 # ─────────────────────────────────────────────────────────────
 backup_existing_file() {
   local src_file="$1"
@@ -468,9 +555,14 @@ backup_existing_file() {
 }
 
 # Function: make_scripts_executable
-# Recursively set +x permission on all scripts/files in a target directory.
-# Skips if directory doesn't exist or no files found.
-# Supports DRY_RUN to simulate the operation.
+# Description:
+#   Finds all files within a specified directory and makes them executable
+#   by adding the `+x` permission. This is typically used on a 'scripts'
+#   directory copied from a template.
+# Arguments:
+#   $1 - The path to the directory containing the scripts.
+# Globals:
+#   - DRY_RUN: If true, the function will only log what it would do.
 # ───────────────────────────────────────────────────────────────────────
 make_scripts_executable() {
   local target_dir="$1"
@@ -513,7 +605,15 @@ make_scripts_executable() {
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Function: parse_args
-# Parses command-line arguments, sets globals and logging
+# Description:
+#   Parses the command-line arguments provided to the script. It sets global
+#   variables based on the provided flags (e.g., --debug, --force) and validates
+#   the target project directory. It also initializes the logging system.
+# Arguments:
+#   $@ - The command-line arguments passed to the script.
+# Globals:
+#   - Sets all operational flags like DEBUG, DRY_RUN, FORCE, etc.
+#   - Sets TARGET_DIR to the validated project directory path.
 # ───────────────────────────────────────
 parse_args() {
   TMPDIR=""
@@ -608,7 +708,13 @@ parse_args() {
 }
 
 # Function: check_dependencies
-# Verifies specified dependencies are installed
+# Description:
+#   Checks if a list of required command-line tools (dependencies) are installed.
+#   If a dependency is missing, it prompts the user to install it.
+# Arguments:
+#   $1 - A space-separated string of dependency names (e.g., "git yq rsync").
+# Globals:
+#   - DRY_RUN: If true, the installation prompt is skipped.
 # ───────────────────────────────────────
 check_dependencies() {
   local deps=($1)
@@ -648,7 +754,20 @@ check_dependencies() {
 }
 
 # Function: clone_sparse_checkout
-# Clone Repo with Sparse Checkout
+# Description:
+#   Clones a remote Git repository into a temporary directory using sparse checkout
+#   to fetch only a specific subfolder (e.g., 'templates'). It then checks the
+#   Git revision against a lockfile in the project directory to determine if the
+#   templates are up-to-date.
+# Arguments:
+#   $1 - The URL of the Git repository to clone.
+#   $2 - The branch to check out (e.g., "main").
+#   $3 - The specific subfolder within the repository to check out.
+# Globals:
+#   - REPO_SUBFOLDER: Is set to the subfolder path.
+#   - TMPDIR: Is set to the path of the new temporary directory.
+#   - INITIAL_RUN: Set to true if no lockfile is found.
+#   - DRY_RUN, FORCE: Control the behavior of the clone and lockfile update.
 # ───────────────────────────────────────
 clone_sparse_checkout() {
   local repo_url="$1"
@@ -737,7 +856,17 @@ clone_sparse_checkout() {
 }
 
 # Function: copy_required_services
-# Copy and merge all required service files and configurations
+# Description:
+#   This is a core function that orchestrates the assembly of the final Docker
+#   Compose setup. It reads the `x-required-services` list from the application's
+#   compose file, then iterates through each required service. For each service,
+#   it copies the corresponding template files (YAML, .env, scripts, secrets)
+#   and merges them into the main `docker-compose.main.yaml` and `.env` files.
+# Globals:
+#   - TARGET_DIR: The root directory of the project.
+#   - TMPDIR: The temporary directory where the templates were cloned.
+#   - REPO_SUBFOLDER: The subfolder within the temp directory (e.g., 'templates').
+#   - INITIAL_RUN, FORCE, DRY_RUN: Control file operations (copying, merging, backing up).
 # ───────────────────────────────────────
 copy_required_services() {
   local app_compose="${TARGET_DIR}/docker-compose.app.yaml"
@@ -754,16 +883,17 @@ copy_required_services() {
 
   # Parsing $app_compose
   log_info "Parsing $app_compose for required services..."
-  
-  local requires=$(yq '.x-required-services[]' "$app_compose" 2> /dev/null | sort -u)
-  
+
+  local requires
+  requires=$(yq '.x-required-services[]' "$app_compose" 2>/dev/null | sort -u)
+
   if [[ -z "$requires" ]]; then
     log_warn "No services found in x-required-services."
   else
     log_info "Found required services:"
     while IFS= read -r service; do
       log_info "   • ${MAGENTA}${service}${RESET}"
-    done <<< "$requires"
+    done <<<"$requires"
   fi
 
   # Copy all required files for the services (docker-compose.*.yaml, /secrets/*, /scripts/*)
@@ -819,14 +949,17 @@ copy_required_services() {
 }
 
 # Function: set_permissions
-# Sets ownership and permissions (700) recursively on directories.
-# Creates directories if they do not exist.
-# Directories are relative to TARGET_DIR.
-# Respects FORCE flag to re-apply permissions on existing directories.
+# Description:
+#   Sets the ownership (user and group) and permissions (700) for a list of
+#   specified directories. This is often used to secure directories that contain
+#   sensitive data. The function will create the directories if they don't exist.
 # Arguments:
-#   $1 - comma-separated list of directory paths (relative to TARGET_DIR)
-#   $2 - user for ownership
-#   $3 - group for ownership
+#   $1 - A comma-separated string of directory paths, relative to TARGET_DIR.
+#   $2 - The username to set as the owner.
+#   $3 - The group to set as the owner.
+# Globals:
+#   - TARGET_DIR: The root directory of the project.
+#   - FORCE: If true, permissions are re-applied even if the directory exists.
 # ───────────────────────────────────────────────────────────────────────
 set_permissions() {
   local dirs="$1"
@@ -865,11 +998,15 @@ set_permissions() {
 }
 
 # Function: pull_docker_images
-# Pull latest docker images from merged compose file and show tag + image ID before and after pull.
+# Description:
+#   Iterates through all services in the main Docker Compose file, pulls the
+#   latest version of each service's image, and checks if the image was updated.
+#   If any images were updated, it gracefully restarts the entire Docker stack.
 # Arguments:
-#   $1 - path to merged compose YAML file
-#   $2 - path to env file (to load variables)
-# Logs all steps, supports DRY_RUN.
+#   $1 - The path to the main `docker-compose.main.yaml` file.
+#   $2 - The path to the main `.env` file, used to resolve variables in image tags.
+# Globals:
+#   - DRY_RUN: If true, the function will only log what it would do.
 # ───────────────────────────────────────
 pull_docker_images() {
   local merged_compose_file="$1"
@@ -968,11 +1105,16 @@ pull_docker_images() {
 }
 
 # Function: delete_docker_volumes
-# Deletes Docker volumes defined in the given compose file.
-# Stops the docker-compose project first if running (interactive prompt unless --force).
+# Description:
+#   Deletes all Docker volumes associated with the project. It first checks if
+#   the project's containers are running and, if so, prompts the user to stop
+#   them before proceeding. It then reads the volume names from the main compose
+#   file and removes them one by one.
 # Arguments:
-#   $1 - path to merged compose YAML file
-# Supports DRY_RUN and FORCE.
+#   $1 - The path to the main `docker-compose.main.yaml` file.
+# Globals:
+#   - DRY_RUN: If true, the function will only log what it would do.
+#   - FORCE: If true, it will stop running containers without prompting.
 # ───────────────────────────────────────
 delete_docker_volumes() {
   local compose_file="$1"
@@ -1051,15 +1193,17 @@ delete_docker_volumes() {
 }
 
 # Function: generate_password
-# Generate a YAML-compatible password and write it into files under a source directory.
+# Description:
+#   Generates a secure, YAML-compatible password and writes it to secret files.
+#   It can either generate passwords for all files in a directory (e.g., 'secrets/')
+#   or for a single specified file.
 # Arguments:
-#   $1 - source directory (mandatory)
-#   $2 - (optional) password length (defaults to 100 if not numeric or not set)
-#   $3 - (optional) specific filename (only that file will be written)
-# Notes:
-#   - Overwrites existing files
-#   - Uses DRY_RUN if set to true
-#   - Generates passwords with YAML-safe characters (no ', ", \)
+#   $1 - The directory containing the secret files (e.g., 'project/secrets').
+#   $2 - (Optional) The desired length of the password. Defaults to 100.
+#   $3 - (Optional) The specific filename to write the password to. If omitted,
+#        all files in the source directory will be populated.
+# Globals:
+#   - DRY_RUN: If true, the function will only log what it would do.
 # ───────────────────────────────────────
 generate_password() {
   local src_dir="$1"
@@ -1109,6 +1253,17 @@ generate_password() {
 # ──────────────────────────────────────────────────────────────────────────────
 # Main Execution
 # ──────────────────────────────────────────────────────────────────────────────
+# Function: main
+# Description:
+#   The main entry point and controller of the script. It parses arguments and
+#   then executes the appropriate workflow based on the provided flags.
+#   - Default: The full setup process (clone, copy, merge, permissions).
+#   - --update: Only pulls the latest Docker images.
+#   - --delete_volumes: Only deletes the project's Docker volumes.
+#   - --generate_password: Only generates new passwords for secrets.
+# Arguments:
+#   $@ - The command-line arguments passed to the script.
+# ───────────────────────────────────────
 main() {
   parse_args "$@"
   if [[ "${UPDATE:-false}" == true ]]; then
@@ -1125,10 +1280,11 @@ main() {
     if [[ "${INITIAL_RUN:-false}" == true ]]; then
       generate_password "${TARGET_DIR}/secrets" "${GP_LEN}" "${GP_FILE}"
     fi
-    
+
     make_scripts_executable "${TARGET_DIR}/scripts"
     if [[ -f "${TARGET_DIR}/scripts/setup.sh" ]]; then
       log_info "Loading variables from "${TARGET_DIR}/scripts/setup.sh""
+      # shellcheck source=/dev/null
       . "${TARGET_DIR}/scripts/setup.sh"
       set_permissions "$DIRECTORIES" "$USER" "$GROUP"
     fi

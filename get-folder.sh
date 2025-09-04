@@ -26,7 +26,9 @@ GREY='\033[1;30m'
 MAGENTA='\033[0;35m'
 
 # Function: log_ok
-# ${GREEN}[OK]
+# Description: Logs a success message to stdout and to the logfile if configured.
+# Arguments:
+#   $*: The message to log.
 # ───────────────────────────────────────
 log_ok() {
   local msg="$*"
@@ -37,7 +39,9 @@ log_ok() {
 }
 
 # Function: log_info
-# ${CYAN}[INFO]
+# Description: Logs an informational message to stdout and to the logfile if configured.
+# Arguments:
+#   $*: The message to log.
 # ───────────────────────────────────────
 log_info() {
   local msg="$*"
@@ -48,7 +52,9 @@ log_info() {
 }
 
 # Function: log_warn
-# ${YELLOW}[WARN]
+# Description: Logs a warning message to stderr and to the logfile if configured.
+# Arguments:
+#   $*: The message to log.
 # ───────────────────────────────────────
 log_warn() {
   local msg="$*"
@@ -59,7 +65,9 @@ log_warn() {
 }
 
 # Function: log_error
-# ${RED}[ERROR]
+# Description: Logs an error message to stderr and to the logfile if configured.
+# Arguments:
+#   $*: The message to log.
 # ───────────────────────────────────────
 log_error() {
   local msg="$*"
@@ -70,7 +78,9 @@ log_error() {
 }
 
 # Function: log_debug
-# ${GREY}[DEBUG]
+# Description: Logs a debug message to stdout and to the logfile if the DEBUG global is true.
+# Arguments:
+#   $*: The message to log.
 # ───────────────────────────────────────
 log_debug() {
   local msg="$*"
@@ -83,8 +93,16 @@ log_debug() {
 }
 
 # Function: setup_logging
-# Initializes logging file inside TARGET_DIR
-# Keep only the latest $log_retention_count logs
+# Description:
+#   Initializes the logging system for the script. It creates a dedicated log
+#   directory, sets up a new log file named with a timestamp, and symlinks it
+#   to 'latest.log' for easy access. It also prunes old logs to conserve space.
+# Arguments:
+#   $1 - The number of log files to retain. Defaults to 2.
+# Globals:
+#   - SCRIPT_DIR: The directory where the script is located.
+#   - SCRIPT_BASE: The base name of the script, used for the log directory.
+#   - LOGFILE: This global variable is set to the path of the new log file.
 # ───────────────────────────────────────
 setup_logging() {
   local log_retention_count="${1:-2}"
@@ -101,7 +119,7 @@ setup_logging() {
   ln -sf "$LOGFILE" "$log_dir/latest.log"
 
   # Retain only the latest N logs
-  local logs  
+  local logs
   mapfile -t logs < <(
   find "$log_dir" -maxdepth 1 -type f -name '*.log' -printf "%T@ %p\n" |
   sort -nr | cut -d' ' -f2- | tail -n +$((log_retention_count + 1))
@@ -115,6 +133,14 @@ setup_logging() {
 # ──────────────────────────────────────────────────────────────────────────────
 # Usage Information
 # ──────────────────────────────────────────────────────────────────────────────
+# Function: usage
+# Description:
+#   Displays the help and usage information for the script, detailing the
+#   command-line arguments, options, and operational notes.
+# Globals:
+#   - REPO_URL: The URL of the repository, shown in the usage message.
+#   - BRANCH: The branch of the repository, shown in the usage message.
+# ───────────────────────────────────────
 usage() {
   cat <<EOF
 Usage: $0 <folder-in-repo> [--debug] [--dry-run] [--force]
@@ -140,9 +166,11 @@ EOF
 # Global Function Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Ensure a directory exists (create if missing)
+# Function: ensure_dir_exists
+# Description:
+#   Checks if a directory exists at the specified path and creates it if it doesn't.
 # Arguments:
-#   $1 - directory path
+#   $1 - The path of the directory to check and create.
 # ───────────────────────────────────────
 ensure_dir_exists() {
   local dir="$1"
@@ -167,7 +195,16 @@ ensure_dir_exists() {
 # ──────────────────────────────────────────────────────────────────────────────
 
 # Function: parse_args
-# Parses command-line arguments, sets globals and logging
+# Description:
+#   Parses command-line arguments, setting global flags and variables that
+#   control the script's execution. It validates that a target folder has been
+#   specified and initializes the logging system.
+# Arguments:
+#   $@ - The command-line arguments passed to the script.
+# Globals:
+#   - TARGET_DIR: Set to the path of the directory to be downloaded.
+#   - REPO_SUBFOLDER: Set to the relative path of the folder within the repository.
+#   - DEBUG, DRY_RUN, FORCE: Boolean flags set based on provided options.
 # ───────────────────────────────────────
 parse_args() {
   TARGET_DIR=""
@@ -225,7 +262,11 @@ parse_args() {
 }
 
 # Function: check_dependencies
-# Verifies all required commands are available
+# Description:
+#   Verifies that required command-line tools (in this case, `git`) are
+#   installed. If a dependency is missing, it prompts the user for installation.
+# Globals:
+#   - DRY_RUN: If true, the installation prompt is skipped.
 # ───────────────────────────────────────
 check_dependencies() {
   # Check git
@@ -277,7 +318,15 @@ check_dependencies() {
 # }
 
 # Function: clone_sparse_checkout
-# Clone Repo with Sparse Checkout
+# Description:
+#   Performs a sparse checkout of the remote repository to efficiently download
+#   only the specified subfolder. It creates a temporary directory for the clone,
+#   configures sparse checkout, and fetches the desired folder.
+# Globals:
+#   - REPO_URL, BRANCH: Specifies the repository and branch to clone from.
+#   - REPO_SUBFOLDER: The specific folder to check out.
+#   - TMPDIR: Is set to the path of the new temporary directory.
+#   - DRY_RUN: If true, the clone operation is skipped.
 # ───────────────────────────────────────
 clone_sparse_checkout() {
   #local repo_url="$1"
@@ -337,7 +386,15 @@ clone_sparse_checkout() {
 }
 
 # Function: copy_files
-# Copy Fetched Files to Local Folder (overwrite if exists)
+# Description:
+#   Copies the contents of the downloaded folder from the temporary directory to
+#   the final target directory. It handles overwriting existing files and also
+#   copies the `run.sh` script to the root if it's not already there.
+# Globals:
+#   - TARGET_DIR: The final destination for the folder contents.
+#   - TMPDIR: The temporary directory where the folder was cloned.
+#   - REPO_SUBFOLDER: The name of the folder being copied.
+#   - DRY_RUN, FORCE: Control the copy and overwrite behavior.
 # ───────────────────────────────────────
 copy_files() {
   if [[ "$DRY_RUN" = true ]]; then
@@ -376,8 +433,19 @@ copy_files() {
 # ──────────────────────────────────────────────────────────────────────────────
 # Main Execution
 # ──────────────────────────────────────────────────────────────────────────────
+# Function: main
+# Description:
+#   The main entry point for the script. It orchestrates the entire process:
+#   1. Parses arguments.
+#   2. Checks for dependencies.
+#   3. Clones the repository to fetch the desired folder.
+#   4. Checks for existing folders and handles overwrites.
+#   5. Copies the files to the target directory.
+# Arguments:
+#   $@ - The command-line arguments passed to the script.
+# ───────────────────────────────────────
 main() {
-  parse_args "$@"  
+  parse_args "$@"
   if [[ -n "$TARGET_DIR" ]]; then
     check_dependencies
     #confirm_overwrite
