@@ -1,80 +1,83 @@
-# MariaDB Backup Script
+# MariaDB Maintenance Service
 
-This script securely creates **full**, **incremental**, or **SQL dump** backups of a MariaDB instance.
+This template provides a service for performing maintenance tasks on a MariaDB database, primarily focused on creating and managing backups. It uses `mariadb-backup` for full/incremental backups and `mysqldump` for logical SQL dumps. The backup schedule is managed by `supercronic`.
 
----
+## Service Overview
+
+- **Image:** This service builds a custom Docker image using the `dockerfiles/dockerfile.supersonic.mariadb` Dockerfile.
+- **Networking:** The service connects to the `backend` network to communicate with the `mariadb` service.
+- **Volumes:** It mounts the `database` volume from the `mariadb` service to perform backups, and also mounts local `./backup` and `./restore` directories for storing and retrieving backup files.
+- **Scripts:** The core logic is contained within the `scripts/backup.sh` and `scripts/docker-entrypoint.sh` scripts. The schedule is defined in `scripts/backup.cron`.
+
+## Configuration
+
+### Environment Variables
+
+This template uses the following environment variables, which can be configured in the `.env` file:
+
+- `MARIADB_BACKUP_RETENTION_DAYS`: The number of days to keep backups. Older backups will be deleted.
+  - **Default:** `7`
+- `MARIADB_BACKUP_DEBUG`: Set to `true` to enable debug mode for the backup script.
+  - **Default:** `false`
+- `MARIADB_RESTORE_DRY_RUN`: If set to `true`, the restore script will simulate a restore without actually copying any data.
+  - **Default:** `false`
+- `MARIADB_RESTORE_DEBUG`: Set to `true` to enable debug mode for the restore script.
+  - **Default:** `false`
+
+The following environment variables are passed from the main application's environment:
+
+- `MARIADB_DB_HOST`: The hostname of the MariaDB service to connect to (e.g., `${APP_NAME}-mariadb`).
+- `MARIADB_USER`: The application's database user.
+- `MARIADB_DATABASE`: The name of the application's database.
+- `MARIADB_PASSWORD_FILE`: The path inside the container to the file containing the user password.
+- `MARIADB_ROOT_PASSWORD_FILE`: The path inside the container to the file containing the root password.
+
+### Secrets
+
+This service uses the same `MARIADB_PASSWORD` and `MARIADB_ROOT_PASSWORD` secrets as the `mariadb` service, which are mounted into the container via a YAML anchor.
+
+### Cron Schedule (`backup.cron`)
+
+The backup schedule is defined in `scripts/backup.cron` and managed by `supercronic`. You can edit this file to change the frequency and type of backups. The default schedule is:
+
+```cron
+# Minute Hour DayOfMonth Month DayOfWeek Command
+0 2 * * * /scripts/backup.sh full
+0 3 * * * /scripts/backup.sh incremental
+0 4 * * 0 /scripts/backup.sh dump
+```
+
+- A **full** backup is performed daily at 2:00 AM.
+- An **incremental** backup is performed daily at 3:00 AM.
+- A **dump** (SQL) backup is performed weekly on Sunday at 4:00 AM.
 
 ## Usage
 
-`backup.sh [full|incremental|dump]`
+To use this template, include `mariadb_maintenance` in the `x-required-services` list of your main application's `docker-compose.app.yaml` file. Ensure that the `mariadb` service is also included and properly configured.
 
-- `full` (default): Creates a full backup.
-- `incremental`: Creates an incremental backup based on the last backup.
-- `dump`: Creates an SQL dump of the specified database.
+### Restore Instructions
 
-If no type is specified, `full` is used.
+#### Full / Incremental Backup
 
----
+1.  Prepare the backup using `mariadb-backup --prepare`. This makes the backup consistent and ready for restoration.
+2.  If you are using incremental backups, you must apply each incremental backup in sequence to the full backup.
+3.  Restore the prepared backup by copying the files back to the MariaDB data directory.
 
-## Environment variables
-
-| Variable                       | Required / Default         | Description                                        |
-|---------------------------------|---------------------------|----------------------------------------------------|
-| `MYSQL_DATABASE`                | **Required** (dump only)   | Name of the database to back up                    |
-| `MYSQL_ROOT_PASSWORD_FILE`      | **Required**               | File containing the root password                  |
-| `MYSQL_ROOT_USER`               | root                       | DB user for the backup                             |
-| `MYSQL_DB_HOST`                 | mariadb                    | DB host                                            |
-| `MYSQL_BACKUP_RETENTION_DAYS`   | 7                          | Number of days to keep backups                     |
-| `MYSQL_BACKUP_COMPRESS_THREADS` | 4                          | Threads for compression                            |
-| `MYSQL_BACKUP_PARALLEL`         | 4                          | Threads for parallel backup                        |
-| `MYSQL_BACKUP_MIN_FREE_MB`      | 10240                      | Minimum free space required (MB)                   |
-| `BACKUP_DIR`                    | /backup                    | Base directory for backups                         |
-
----
-
-## Restore instructions
-
-### Full / incremental backup
-
-Backups can be prepared with `mariadb-backup --prepare` and restored via copy-back or manually:
-
-# mariadb-backup --prepare --target-dir=/backup/full/20250614_01
-# (run additional --prepare commands if using incremental backups)
-
-### SQL dump
-
-Import SQL dump:
-
-# gunzip -c /backup/dumps/mariadb_dump_YYYYMMDD_HHMMSS.sql.gz | mariadb -h <host> -u <user> -p <db>
-
----
-
-## Security
-
-- `umask 077` ensures files are only readable by the owner.
-- Passwords are never logged in plain text.
-- Lockfile prevents concurrent runs.
-
----
-
-## Failure conditions / checks
-
-The script aborts if:
-
-- There is not enough free disk space.
-- The database is not reachable.
-- The lockfile exists (a backup is already running).
-- Required variables are missing.
-
----
-
-## Cron usage
-
-Recommended: run via **supercronic** and adjust the backup.cron to your needs:
+Example commands (run inside the maintenance container):
 
 ```bash
-# Minute Hour DayOfMonth Month DayOfWeek Command
-0 2 * * * /path/to/backup.sh full
-0 3 * * * /path/to/backup.sh incremental
-0 4 * * 0 /path/to/backup.sh dump
+# Prepare a full backup
+mariadb-backup --prepare --target-dir=/backup/full/YYYYMMDD_HHMMSS
+
+# Apply an incremental backup to the prepared full backup
+mariadb-backup --prepare --target-dir=/backup/full/YYYYMMDD_HHMMSS --incremental-dir=/backup/incremental/YYYYMMDD_HHMMSS
+```
+
+#### SQL Dump
+
+You can restore an SQL dump by importing the `.sql.gz` file into the database.
+
+```bash
+# Unzip and import the dump into the target database
+gunzip -c /backup/dumps/mariadb_dump_YYYYMMDD_HHMMSS.sql.gz | mariadb -h <host> -u <user> -p <db>
 ```
